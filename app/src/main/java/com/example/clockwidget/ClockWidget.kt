@@ -37,6 +37,8 @@ object ClockWidget {
     private const val TIME_SP = 36f
     private const val DATE_SP = 14f
     /** 自動調整のときの、日付の大きさ ÷ 時刻の大きさ（小・中・大）。 */
+    /** 日付の大きさの「無」（日付を出さない）。 */
+    const val DATE_NONE = 3
     private val DATE_RATIOS = floatArrayOf(0.3f, 0.4f, 0.55f)
     /** 手動のときの、日付の大きさの倍率（小・中・大）。 */
     private val DATE_MANUAL = floatArrayOf(0.75f, 1f, 1.4f)
@@ -109,7 +111,8 @@ object ClockWidget {
         v.setViewVisibility(R.id.manual, if (fit) View.GONE else View.VISIBLE)
         v.setViewVisibility(R.id.fit, if (fit) View.VISIBLE else View.GONE)
         if (fit && size != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val ratio = DATE_RATIOS[s.dateSize]
+            val showDate = s.dateSize != DATE_NONE
+            val ratio = DATE_RATIOS[s.dateSize.coerceAtMost(2)]
             val is24 = DateFormat.is24HourFormat(context)
             val p = TextPaint(Paint.ANTI_ALIAS_FLAG)
             p.typeface = font.time.typeface(context)
@@ -121,17 +124,17 @@ object ClockWidget {
             p.typeface = font.date.typeface(context)
             p.textSize = BASE * ratio
             // ホーム画面と同じ作り方（端末の言語）で文字にする
-            val dates = listOf(0, 1).map { add ->
+            val dates = if (!showDate) emptyList() else listOf(0, 1).map { add ->
                 val day = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, add) }
                 DateFormat.format(DATE_FORMAT, day).toString()
             }
-            val dw = dates.maxOf { p.measureText(it) }
+            val dw = dates.maxOfOrNull { p.measureText(it) } ?: 0f
             val db = Rect()
             for (d in dates) db.union(Rect().also { p.getTextBounds(d, 0, d.length, it) })
-            val dAbove = dates.maxOf { lineAscent(p, it) } + db.top
+            val dAbove = if (showDate) dates.maxOf { lineAscent(p, it) } + db.top else 0f
 
             val timeH = (tb.bottom - tb.top).toFloat()
-            val gap = timeH * GAP
+            val gap = if (showDate) timeH * GAP else 0f
             val height = timeH + gap + (db.bottom - db.top)
             val k = minOf(size.width / maxOf(tw, dw), size.height / height) * SAFETY
             val dip = TypedValue.COMPLEX_UNIT_DIP
@@ -141,12 +144,14 @@ object ClockWidget {
             v.setTextViewTextSize(R.id.fit_date, dip, BASE * ratio * k)
             v.setViewLayoutMargin(R.id.fit_time, RemoteViews.MARGIN_TOP, -tAbove * k, dip)
             v.setViewLayoutMargin(R.id.fit_date, RemoteViews.MARGIN_TOP, (timeH + gap - dAbove) * k, dip)
+            v.setViewVisibility(R.id.fit_date, if (showDate) View.VISIBLE else View.GONE)
             v.setTextColor(R.id.fit_time, s.textColor)
             v.setTextColor(R.id.fit_date, s.textColor)
         } else {
             val scale = s.textScale / 100f
             v.setTextViewTextSize(R.id.time, TypedValue.COMPLEX_UNIT_SP, TIME_SP * scale)
-            v.setTextViewTextSize(R.id.date, TypedValue.COMPLEX_UNIT_SP, DATE_SP * scale * DATE_MANUAL[s.dateSize])
+            v.setTextViewTextSize(R.id.date, TypedValue.COMPLEX_UNIT_SP, DATE_SP * scale * DATE_MANUAL[s.dateSize.coerceAtMost(2)])
+            v.setViewVisibility(R.id.date, if (s.dateSize == DATE_NONE) View.GONE else View.VISIBLE)
             v.setTextColor(R.id.time, s.textColor)
             v.setTextColor(R.id.date, s.textColor)
             if (s.autoFit) v.setViewPadding(R.id.manual, 0, 0, 0, 0)
@@ -182,16 +187,18 @@ object ClockWidget {
         val hour = hourNow(is24)
         val time = "$hour:%02d".format(LocalTime.now().minute)
         val date = dateText(font)
-        val ratio = if (s.autoFit) DATE_RATIOS[s.dateSize] else DATE_SP / TIME_SP * DATE_MANUAL[s.dateSize]
+        val showDate = s.dateSize != DATE_NONE
+        val di = s.dateSize.coerceAtMost(2)
+        val ratio = if (s.autoFit) DATE_RATIOS[di] else DATE_SP / TIME_SP * DATE_MANUAL[di]
 
         // 大きさ BASE で計って、収まる倍率 k を求める
         val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font.time.typeface(context); textSize = BASE }
         val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font.date.typeface(context); textSize = BASE * ratio }
         val tw = timeWidth(tp, is24, hour)
         val tb = Rect().also { tp.getTextBounds(DIGITS, 0, DIGITS.length, it) }
-        val dw = dp.measureText(date)
-        val db = Rect().also { dp.getTextBounds(date, 0, date.length, it) }
-        val gap = (tb.bottom - tb.top) * GAP
+        val dw = if (showDate) dp.measureText(date) else 0f
+        val db = Rect().also { if (showDate) dp.getTextBounds(date, 0, date.length, it) }
+        val gap = if (showDate) (tb.bottom - tb.top) * GAP else 0f
         val height = (tb.bottom - tb.top) + gap + (db.bottom - db.top)
         val fitK = minOf(availW / maxOf(tw, dw), availH / height)
         val k = if (s.autoFit) fitK * SAFETY else {
@@ -204,7 +211,7 @@ object ClockWidget {
         dp.textSize = BASE * ratio * k
         val top = (bh - height * k) / 2
         c.drawText(time, (bw - tp.measureText(time)) / 2, top - tb.top * k, tp)
-        c.drawText(date, (bw - dp.measureText(date)) / 2, top + (tb.bottom - tb.top + gap - db.top) * k, dp)
+        if (showDate) c.drawText(date, (bw - dp.measureText(date)) / 2, top + (tb.bottom - tb.top + gap - db.top) * k, dp)
 
         val v = RemoteViews(context.packageName, R.layout.widget)
         v.setImageViewBitmap(R.id.clock, bmp)

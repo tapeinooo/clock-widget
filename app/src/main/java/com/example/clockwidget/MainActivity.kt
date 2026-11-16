@@ -77,7 +77,7 @@ class MainActivity : Activity() {
         label("日付の大きさ")
         root.addView(RadioGroup(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            listOf("小", "中", "大").forEachIndexed { i, t ->
+            listOf("小", "中", "大", "無").forEachIndexed { i, t ->
                 addView(RadioButton(this@MainActivity).apply { text = t; id = 100 + i },
                     LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             }
