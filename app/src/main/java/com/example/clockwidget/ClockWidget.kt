@@ -15,22 +15,23 @@ object ClockWidget {
     private const val TIME_SP = 36f
     private const val DATE_SP = 14f
     /** 自動調整のときの、日付の大きさ ÷ 時刻の大きさ。 */
-    private const val DATE_RATIO = 0.4f
+    private val DATE_RATIOS = floatArrayOf(0.3f, 0.4f, 0.55f)
+    private val DATE_MANUAL = floatArrayOf(0.75f, 1f, 1.4f)
 
     fun build(context: Context, manager: AppWidgetManager, id: Int): RemoteViews {
         val s = Settings(context)
         val font = Fonts.all[s.font]
         val v = RemoteViews(context.packageName, font.layout)
         var timeSize = TIME_SP * s.textScale / 100f
-        var dateSize = DATE_SP * s.textScale / 100f
+        var dateSize = DATE_SP * s.textScale / 100f * DATE_MANUAL[s.dateSize]
         var unit = TypedValue.COMPLEX_UNIT_SP
         if (s.autoFit) {
             val o = manager.getAppWidgetOptions(id)
             val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
             val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
             if (w > 0 && h > 0) {
-                timeSize = fit(font, w.toFloat(), h.toFloat())
-                dateSize = timeSize * DATE_RATIO
+                timeSize = fit(font, w.toFloat(), h.toFloat(), DATE_RATIOS[s.dateSize])
+                dateSize = timeSize * DATE_RATIOS[s.dateSize]
                 unit = TypedValue.COMPLEX_UNIT_DIP
             }
             v.setViewPadding(R.id.content, 0, 0, 0, 0)
@@ -48,12 +49,12 @@ object ClockWidget {
     }
 
     /** 幅 w・高さ h（dp）にぎりぎり収まる時刻の文字の大きさ（dp）。 */
-    private fun fit(font: FontDef, w: Float, h: Float): Float {
+    private fun fit(font: FontDef, w: Float, h: Float, ratio: Float): Float {
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Fonts.typeface(font); textSize = 100f }
         val tw = p.measureText("00:00")
         val tm = p.fontMetrics
         val th = tm.descent - tm.ascent
-        p.textSize = 100f * DATE_RATIO
+        p.textSize = 100f * ratio
         val dw = p.measureText("12月30日(水)")
         val dm = p.fontMetrics
         val dh = dm.descent - dm.ascent

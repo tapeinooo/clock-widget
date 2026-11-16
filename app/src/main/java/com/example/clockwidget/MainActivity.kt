@@ -10,6 +10,8 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.Switch
@@ -73,6 +75,16 @@ class MainActivity : Activity() {
             })
         })
         alphaLabel.text = "背景の濃さ: ${settings.bgAlpha}%"
+
+        label("日付の大きさ")
+        root.addView(RadioGroup(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            listOf("小", "中", "大").forEachIndexed { i, t ->
+                addView(RadioButton(this@MainActivity).apply { text = t; id = 100 + i }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            check(100 + settings.dateSize)
+            setOnCheckedChangeListener { _, id -> settings.dateSize = id - 100 }
+        })
 
         label("フォント")
         root.addView(Spinner(this).apply {

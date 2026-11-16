@@ -29,4 +29,9 @@ class Settings(context: Context) {
     var autoFit: Boolean
         get() = prefs.getBoolean("auto_fit", false)
         set(v) = prefs.edit().putBoolean("auto_fit", v).apply()
+
+    /** 日付の大きさ：0＝小、1＝中、2＝大。 */
+    var dateSize: Int
+        get() = prefs.getInt("date_size", 1).coerceIn(0, 2)
+        set(v) = prefs.edit().putInt("date_size", v.coerceIn(0, 2)).apply()
 }
