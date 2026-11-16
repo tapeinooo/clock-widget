@@ -15,11 +15,22 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        // 自分用の固定の鍵（どの環境でビルドしても同じ署名になり、上書きで入れられる）
+        create("mine") {
+            storeFile = rootProject.file("clock.p12")
+            storeType = "pkcs12"
+            storePassword = "clockwidget"
+            keyAlias = "clock"
+            keyPassword = "clockwidget"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // 自分のスマホに入れるだけなので、デバッグ版と同じ鍵で署名する
-            signingConfig = signingConfigs.getByName("debug")
+            // 自分のスマホに入れるだけなので、固定の鍵で署名する
+            signingConfig = signingConfigs.getByName("mine")
         }
     }
     compileOptions {
