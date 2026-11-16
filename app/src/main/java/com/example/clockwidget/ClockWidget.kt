@@ -6,6 +6,9 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
@@ -17,8 +20,10 @@ import android.util.SizeF
 import android.util.TypedValue
 import android.widget.RemoteViews
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.sqrt
 
 object ClockWidget {
     private const val TIME_SP = 36f
@@ -39,8 +44,14 @@ object ClockWidget {
 
     fun build(context: Context, manager: AppWidgetManager, id: Int): RemoteViews {
         val s = Settings(context)
-        if (!s.autoFit) return views(context, s, null)
         val o = manager.getAppWidgetOptions(id)
+        if (Fonts.all[s.font].bitmap) {
+            // 絵は縦向きの大きさで描き、ほかの大きさでは縦横比を保って拡大・縮小させる
+            val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+            val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+            return bitmapViews(context, s, if (w > 0 && h > 0) SizeF(w.toFloat(), h.toFloat()) else SizeF(180f, 80f))
+        }
+        if (!s.autoFit) return views(context, s, null)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // 縦向き・横向きなど、ホーム画面が使う大きさごとに作っておき、ホーム画面に選ばせる
             @Suppress("DEPRECATION")
@@ -82,13 +93,74 @@ object ClockWidget {
         }
         v.setTextColor(R.id.time, s.textColor)
         v.setTextColor(R.id.date, s.textColor)
+        common(context, s, v)
+        return v
+    }
+
+    /** 背景の濃さと、タップで時計アプリ（アラーム一覧）を開くこと。 */
+    private fun common(context: Context, s: Settings, v: RemoteViews) {
         v.setInt(R.id.bg, "setImageAlpha", s.bgAlpha * 255 / 100)
-        // タップで時計アプリ（アラーム一覧）を開く
         val intent = Intent(AlarmClock.ACTION_SHOW_ALARMS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pi = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         v.setOnClickPendingIntent(R.id.root, pi)
+    }
+
+    /**
+     * アプリに入れたフォント：今の時刻と日付を絵（濃さだけの絵）に描き、文字色で塗る。
+     * size はウィジェットの大きさ（dp）。
+     */
+    private fun bitmapViews(context: Context, s: Settings, size: SizeF): RemoteViews {
+        val font = Fonts.all[s.font]
+        val v = RemoteViews(context.packageName, R.layout.widget_bitmap)
+        var density = context.resources.displayMetrics.density
+        // 絵が大きすぎると送れないので、点の数を抑える（足りない分は拡大して出す）
+        val area = size.width * size.height * density * density
+        if (area > MAX_PIXELS) density *= sqrt(MAX_PIXELS / area)
+        val bw = (size.width * density).toInt().coerceAtLeast(1)
+        val bh = (size.height * density).toInt().coerceAtLeast(1)
+        val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ALPHA_8)
+        val c = Canvas(bmp)
+        val pad = if (s.autoFit) 0f else 8f * density
+        val availW = bw - 2 * pad
+        val availH = bh - 2 * pad
+
+        val is24 = DateFormat.is24HourFormat(context)
+        val now = LocalTime.now()
+        val time = if (is24) "${now.hour}:%02d".format(now.minute) else "${(now.hour + 11) % 12 + 1}:%02d".format(now.minute)
+        val date = dateText(font)
+        val ratio = if (s.autoFit) DATE_RATIOS[s.dateSize] else DATE_SP / TIME_SP * DATE_MANUAL[s.dateSize]
+
+        // 大きさ 100 で計って、収まる倍率を求める
+        val base = 100f
+        val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font.time.typeface(context); textSize = base }
+        val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font.date.typeface(context); textSize = base * ratio }
+        val hours = if (is24) 0..23 else 1..12
+        val tw = hours.maxOf { tp.measureText("$it:") } + (0..59).maxOf { tp.measureText("%02d".format(it)) }
+        val digits = "0123456789:"
+        val tb = Rect().also { tp.getTextBounds(digits, 0, digits.length, it) }
+        val dw = dp.measureText(date)
+        val db = Rect().also { dp.getTextBounds(date, 0, date.length, it) }
+        val gap = (tb.bottom - tb.top) * GAP
+        val height = (tb.bottom - tb.top) + gap + (db.bottom - db.top)
+        val fitK = minOf(availW / maxOf(tw, dw), availH / height)
+        val k = if (s.autoFit) fitK * SAFETY else {
+            val want = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, TIME_SP * s.textScale / 100f, context.resources.displayMetrics) /
+                context.resources.displayMetrics.density * density / base
+            minOf(want, fitK)
+        }
+        tp.textSize = base * k
+        dp.textSize = base * ratio * k
+        val top = (bh - height * k) / 2
+        c.drawText(time, (bw - tp.measureText(time)) / 2, top - tb.top * k, tp)
+        c.drawText(date, (bw - dp.measureText(date)) / 2, top + (tb.bottom - tb.top + gap) * k - db.top * k, dp)
+
+        v.setImageViewBitmap(R.id.clock, bmp)
+        v.setInt(R.id.clock, "setColorFilter", s.textColor)
+        common(context, s, v)
         return v
     }
+
+    private const val MAX_PIXELS = 500_000f
 
     /** 文字の大きさ（dp）と、上下の余白（dp、負なら詰める）。 */
     private class Fit(val time: Float, val date: Float, val timeTop: Float, val timeBottom: Float, val dateTop: Float, val dateBottom: Float)
@@ -136,7 +208,13 @@ object ClockWidget {
         val m = AppWidgetManager.getInstance(context)
         val ids = m.getAppWidgetIds(ComponentName(context, ClockWidgetReceiver::class.java))
         for (id in ids) m.updateAppWidget(id, build(context, m, id))
-        if (ids.isNotEmpty()) MidnightAlarm.schedule(context)
+        scheduleAlarms(context, ids.isNotEmpty())
+    }
+
+    /** 0時の目覚ましと、絵で出すフォントのときの毎分の目覚ましを掛ける（ウィジェットがなければ外す）。 */
+    fun scheduleAlarms(context: Context, any: Boolean) {
+        if (any) MidnightAlarm.schedule(context) else MidnightAlarm.cancel(context)
+        if (any && Fonts.all[Settings(context).font].bitmap) TickAlarm.schedule(context) else TickAlarm.cancel(context)
     }
 }
 
@@ -144,7 +222,7 @@ class ClockWidgetReceiver : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             // 日付が変わった・時刻やタイムゾーンや言語が変わった・再起動・更新
-            MidnightAlarm.ACTION, Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED, Intent.ACTION_LOCALE_CHANGED,
+            MidnightAlarm.ACTION, TickAlarm.ACTION, Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED, Intent.ACTION_LOCALE_CHANGED,
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> ClockWidget.updateAll(context)
             else -> super.onReceive(context, intent)
         }
@@ -152,7 +230,7 @@ class ClockWidgetReceiver : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         for (id in ids) manager.updateAppWidget(id, ClockWidget.build(context, manager, id))
-        MidnightAlarm.schedule(context)
+        ClockWidget.scheduleAlarms(context, true)
     }
 
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, newOptions: Bundle) {
@@ -160,6 +238,6 @@ class ClockWidgetReceiver : AppWidgetProvider() {
     }
 
     override fun onDisabled(context: Context) {
-        MidnightAlarm.cancel(context)
+        ClockWidget.scheduleAlarms(context, false)
     }
 }
