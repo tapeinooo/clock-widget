@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Paint
 import android.provider.AlarmClock
 import android.util.TypedValue
 import android.widget.RemoteViews
@@ -13,13 +14,29 @@ import android.widget.RemoteViews
 object ClockWidget {
     private const val TIME_SP = 36f
     private const val DATE_SP = 14f
+    /** 自動調整のときの、日付の大きさ ÷ 時刻の大きさ。 */
+    private const val DATE_RATIO = 0.4f
 
-    fun build(context: Context): RemoteViews {
+    fun build(context: Context, manager: AppWidgetManager, id: Int): RemoteViews {
         val s = Settings(context)
-        val v = RemoteViews(context.packageName, R.layout.widget)
-        val k = s.textScale / 100f
-        v.setTextViewTextSize(R.id.time, TypedValue.COMPLEX_UNIT_SP, TIME_SP * k)
-        v.setTextViewTextSize(R.id.date, TypedValue.COMPLEX_UNIT_SP, DATE_SP * k)
+        val font = Fonts.all[s.font]
+        val v = RemoteViews(context.packageName, font.layout)
+        var timeSize = TIME_SP * s.textScale / 100f
+        var dateSize = DATE_SP * s.textScale / 100f
+        var unit = TypedValue.COMPLEX_UNIT_SP
+        if (s.autoFit) {
+            val o = manager.getAppWidgetOptions(id)
+            val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+            val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
+            if (w > 0 && h > 0) {
+                timeSize = fit(font, w.toFloat(), h.toFloat())
+                dateSize = timeSize * DATE_RATIO
+                unit = TypedValue.COMPLEX_UNIT_DIP
+            }
+            v.setViewPadding(R.id.content, 0, 0, 0, 0)
+        }
+        v.setTextViewTextSize(R.id.time, unit, timeSize)
+        v.setTextViewTextSize(R.id.date, unit, dateSize)
         v.setTextColor(R.id.time, s.textColor)
         v.setTextColor(R.id.date, s.textColor)
         v.setInt(R.id.bg, "setImageAlpha", s.bgAlpha * 255 / 100)
@@ -30,15 +47,34 @@ object ClockWidget {
         return v
     }
 
+    /** 幅 w・高さ h（dp）にぎりぎり収まる時刻の文字の大きさ（dp）。 */
+    private fun fit(font: FontDef, w: Float, h: Float): Float {
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Fonts.typeface(font); textSize = 100f }
+        val tw = p.measureText("00:00")
+        val tm = p.fontMetrics
+        val th = tm.descent - tm.ascent
+        p.textSize = 100f * DATE_RATIO
+        val dw = p.measureText("12月30日(水)")
+        val dm = p.fontMetrics
+        val dh = dm.descent - dm.ascent
+        val byW = w / maxOf(tw, dw) * 100f
+        val byH = h / (th + dh) * 100f
+        return (minOf(byW, byH) * 0.97f).coerceIn(8f, 400f)
+    }
+
     fun updateAll(context: Context) {
         val m = AppWidgetManager.getInstance(context)
         val ids = m.getAppWidgetIds(ComponentName(context, ClockWidgetReceiver::class.java))
-        for (id in ids) m.updateAppWidget(id, build(context))
+        for (id in ids) m.updateAppWidget(id, build(context, m, id))
     }
 }
 
 class ClockWidgetReceiver : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        for (id in ids) manager.updateAppWidget(id, ClockWidget.build(context))
+        for (id in ids) manager.updateAppWidget(id, ClockWidget.build(context, manager, id))
+    }
+
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, newOptions: android.os.Bundle) {
+        manager.updateAppWidget(id, ClockWidget.build(context, manager, id))
     }
 }

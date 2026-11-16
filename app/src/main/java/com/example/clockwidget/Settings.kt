@@ -19,4 +19,14 @@ class Settings(context: Context) {
     var bgAlpha: Int
         get() = prefs.getInt("bg_alpha", 90)
         set(v) = prefs.edit().putInt("bg_alpha", v.coerceIn(0, 100)).apply()
+
+    /** フォントの番号（Fonts.all の位置）。 */
+    var font: Int
+        get() = prefs.getInt("font", 0).coerceIn(0, Fonts.all.size - 1)
+        set(v) = prefs.edit().putInt("font", v).apply()
+
+    /** ウィジェットの大きさに合わせて、余白なしで文字をいっぱいまで大きくする。 */
+    var autoFit: Boolean
+        get() = prefs.getBoolean("auto_fit", false)
+        set(v) = prefs.edit().putBoolean("auto_fit", v).apply()
 }

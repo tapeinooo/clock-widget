@@ -6,7 +6,15 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.ScrollView
+import android.widget.Spinner
+import android.widget.Switch
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -30,15 +38,29 @@ class MainActivity : Activity() {
         }
         fun label(t: String) = TextView(this).apply { text = t; textSize = 16f }.also { root.addView(it) }
 
+        val auto = Switch(this).apply {
+            text = "大きさに合わせて文字を最大にする（余白なし）"
+            isChecked = settings.autoFit
+        }
+        root.addView(auto)
+
         val scaleLabel = label("")
-        root.addView(SeekBar(this).apply {
+        val scaleBar = SeekBar(this).apply {
             max = (200 - 60) / 5
             progress = (settings.textScale - 60) / 5
             setOnSeekBarChangeListener(listener { p ->
                 settings.textScale = 60 + p * 5
                 scaleLabel.text = "文字の大きさ: ${settings.textScale}%"
             })
-        })
+        }
+        root.addView(scaleBar)
+        auto.setOnCheckedChangeListener { _, on ->
+            settings.autoFit = on
+            scaleBar.isEnabled = !on
+            scaleLabel.alpha = if (on) 0.4f else 1f
+        }
+        scaleBar.isEnabled = !settings.autoFit
+        scaleLabel.alpha = if (settings.autoFit) 0.4f else 1f
         scaleLabel.text = "文字の大きさ: ${settings.textScale}%"
 
         val alphaLabel = label("")
@@ -51,6 +73,16 @@ class MainActivity : Activity() {
             })
         })
         alphaLabel.text = "背景の濃さ: ${settings.bgAlpha}%"
+
+        label("フォント")
+        root.addView(Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, Fonts.all.map { it.name })
+            setSelection(settings.font)
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { settings.font = pos }
+                override fun onNothingSelected(p: AdapterView<*>?) {}
+            }
+        })
 
         label("文字の色")
         val colors = listOf("白" to Color.WHITE, "黄" to 0xFFFFEB3B.toInt(), "水色" to 0xFF4FC3F7.toInt(),
@@ -67,7 +99,14 @@ class MainActivity : Activity() {
             text = "完了"
             setOnClickListener { finishOk(widgetId) }
         })
-        setContentView(root)
+        // ノッチ・ステータスバーにかからないよう、上下に余白を足す
+        val base = root.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val b = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            v.setPadding(v.paddingLeft, base + b.top, v.paddingRight, base + b.bottom)
+            insets
+        }
+        setContentView(ScrollView(this).apply { addView(root) })
     }
 
     private fun listener(f: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
