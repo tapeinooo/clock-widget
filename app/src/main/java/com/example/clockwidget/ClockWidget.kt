@@ -23,6 +23,7 @@ import android.widget.RemoteViews
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.Calendar
 import java.util.Locale
 import kotlin.math.sqrt
 
@@ -42,12 +43,14 @@ object ClockWidget {
     /** 時刻と日付の間（時刻の数字の高さに対する割合）。 */
     private const val GAP = 0.08f
     /** 端で欠けないよう、ほんの少しだけ小さくする。 */
-    private const val SAFETY = 0.98f
+    private const val SAFETY = 0.96f
     /** 絵が大きすぎると送れないので、点の数を抑える（足りない分は拡大して出す）。 */
     private const val MAX_PIXELS = 500_000f
     /** 計るときの文字の大きさ。 */
     private const val BASE = 100f
     private const val DIGITS = "0123456789:"
+    /** 文字で出すときの日付の書き方（res/layout/widget_text_*.xml と同じ）。 */
+    private const val DATE_FORMAT = "M月d日(E)"
 
     /** 日本語の字があるフォントは「11月16日(月)」、ないフォントは「11.16 MON」。 */
     fun dateText(font: FontDef, date: LocalDate = LocalDate.now()): String =
@@ -117,7 +120,11 @@ object ClockWidget {
             // 日付：今日と明日のうち大きいほう（0時を過ぎてから合わせ直すまでの間も、はみ出さないように）
             p.typeface = font.date.typeface(context)
             p.textSize = BASE * ratio
-            val dates = listOf(dateText(font), dateText(font, LocalDate.now().plusDays(1)))
+            // ホーム画面と同じ作り方（端末の言語）で文字にする
+            val dates = listOf(0, 1).map { add ->
+                val day = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, add) }
+                DateFormat.format(DATE_FORMAT, day).toString()
+            }
             val dw = dates.maxOf { p.measureText(it) }
             val db = Rect()
             for (d in dates) db.union(Rect().also { p.getTextBounds(d, 0, d.length, it) })

@@ -46,7 +46,8 @@
             android:textSize="14sp" />
     </LinearLayout>
 
-    <!-- 大きさに合わせるとき：高さを字の高さに合わせ、字の上の空きの分だけ上にずらして置く（ClockWidget.kt） -->
+    <!-- 大きさに合わせるとき：高さを字の高さに合わせ、字の上の空きの分だけ上にずらして置く（ClockWidget.kt）。
+         文字は幅を大きく取った枠の中央に置き、万一入りきらなくても折り返さないようにする -->
     <FrameLayout
         android:id="@+id/fit"
         android:layout_width="match_parent"
@@ -56,9 +57,11 @@
 
         <TextClock
             android:id="@+id/fit_time"
-            android:layout_width="wrap_content"
+            android:layout_width="3000dp"
             android:layout_height="wrap_content"
             android:layout_gravity="top|center_horizontal"
+            android:gravity="center_horizontal"
+            android:singleLine="true"
             android:layout_marginBottom="-2000dp"
             android:fontFamily="sans-serif-condensed"
             android:format12Hour="h:mm"
@@ -70,9 +73,11 @@
 
         <TextClock
             android:id="@+id/fit_date"
-            android:layout_width="wrap_content"
+            android:layout_width="3000dp"
             android:layout_height="wrap_content"
             android:layout_gravity="top|center_horizontal"
+            android:gravity="center_horizontal"
+            android:singleLine="true"
             android:layout_marginBottom="-2000dp"
             android:fontFamily="sans-serif-condensed"
             android:format12Hour="M月d日(E)"

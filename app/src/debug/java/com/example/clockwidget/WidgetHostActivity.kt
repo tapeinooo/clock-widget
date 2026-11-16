@@ -43,6 +43,8 @@ class WidgetHostActivity : Activity() {
             putParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, arrayListOf(android.util.SizeF(w.toFloat(), h.toFloat())))
         })
         val view = host.createView(this, id, manager.getAppWidgetInfo(id))
+        // 既定の余白をなくし、知らせた大きさと実際の大きさを同じにする
+        view.setPadding(0, 0, 0, 0)
         fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
         val frame = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#3C6E91")) }
         frame.addView(view, FrameLayout.LayoutParams(dp(w), dp(h), Gravity.CENTER_HORIZONTAL or Gravity.TOP).apply { topMargin = dp(80) })
