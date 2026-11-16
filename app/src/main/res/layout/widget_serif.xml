@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Fonts.kt から作る。フォントごとに1つ（RemoteViews ではフォントを後から変えられないため） -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
@@ -12,18 +13,18 @@
         android:src="@drawable/widget_bg" />
 
     <LinearLayout
+        android:id="@+id/content"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
-        android:id="@+id/content"
         android:orientation="vertical"
         android:padding="8dp">
 
         <TextClock
             android:id="@+id/time"
-            android:fontFamily="serif"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:fontFamily="serif"
             android:format12Hour="h:mm"
             android:format24Hour="H:mm"
             android:includeFontPadding="false"
@@ -31,13 +32,11 @@
             android:textColor="#FFFFFF"
             android:textSize="36sp" />
 
-        <TextClock
+        <TextView
             android:id="@+id/date"
-            android:fontFamily="serif"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:format12Hour="M月d日(E)"
-            android:format24Hour="M月d日(E)"
+            android:fontFamily="serif"
             android:includeFontPadding="false"
             android:maxLines="1"
             android:textColor="#FFFFFF"

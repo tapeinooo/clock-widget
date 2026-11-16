@@ -4,44 +4,51 @@ import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.Gravity
-import android.view.View
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
-import android.widget.Spinner
+import android.widget.SeekBar
 import android.widget.Switch
+import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import android.widget.LinearLayout
-import android.widget.SeekBar
-import android.widget.TextView
 
 /** 設定画面。ウィジェットの追加時・長押しの「編集」・アプリのアイコンから開く。 */
 class MainActivity : Activity() {
     private lateinit var settings: Settings
+    private val samples = mutableListOf<LinearLayout>()
+
+    private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = Settings(this)
         val widgetId = intent?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
             ?: AppWidgetManager.INVALID_APPWIDGET_ID
-        // 追加時にキャンセルされても追加されないよう、まず CANCELED を返す
-        setResult(RESULT_CANCELED, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
+        // 設定は今の値のままでも使えるので、戻るボタンで閉じてもウィジェットは置かれるようにする
+        setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            val p = (16 * resources.displayMetrics.density).toInt()
+            val p = dp(16f).toInt()
             setPadding(p, p, p, p)
         }
-        fun label(t: String) = TextView(this).apply { text = t; textSize = 16f }.also { root.addView(it) }
+        fun label(t: String) = TextView(this).apply {
+            text = t
+            textSize = 16f
+            setPadding(0, dp(12f).toInt(), 0, 0)
+        }.also { root.addView(it) }
 
+        // 文字の大きさ
         val auto = Switch(this).apply {
             text = "大きさに合わせて文字を最大にする（余白なし）"
+            textSize = 16f
             isChecked = settings.autoFit
         }
         root.addView(auto)
@@ -56,14 +63,27 @@ class MainActivity : Activity() {
             })
         }
         root.addView(scaleBar)
-        auto.setOnCheckedChangeListener { _, on ->
-            settings.autoFit = on
+        scaleLabel.text = "文字の大きさ: ${settings.textScale}%"
+        fun showAuto(on: Boolean) {
             scaleBar.isEnabled = !on
             scaleLabel.alpha = if (on) 0.4f else 1f
         }
-        scaleBar.isEnabled = !settings.autoFit
-        scaleLabel.alpha = if (settings.autoFit) 0.4f else 1f
-        scaleLabel.text = "文字の大きさ: ${settings.textScale}%"
+        auto.setOnCheckedChangeListener { _, on ->
+            settings.autoFit = on
+            showAuto(on)
+        }
+        showAuto(settings.autoFit)
+
+        label("日付の大きさ")
+        root.addView(RadioGroup(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            listOf("小", "中", "大").forEachIndexed { i, t ->
+                addView(RadioButton(this@MainActivity).apply { text = t; id = 100 + i },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            check(100 + settings.dateSize)
+            setOnCheckedChangeListener { _, id -> settings.dateSize = id - 100 }
+        })
 
         val alphaLabel = label("")
         root.addView(SeekBar(this).apply {
@@ -76,26 +96,6 @@ class MainActivity : Activity() {
         })
         alphaLabel.text = "背景の濃さ: ${settings.bgAlpha}%"
 
-        label("日付の大きさ")
-        root.addView(RadioGroup(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            listOf("小", "中", "大").forEachIndexed { i, t ->
-                addView(RadioButton(this@MainActivity).apply { text = t; id = 100 + i }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            }
-            check(100 + settings.dateSize)
-            setOnCheckedChangeListener { _, id -> settings.dateSize = id - 100 }
-        })
-
-        label("フォント")
-        root.addView(Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, Fonts.all.map { it.name })
-            setSelection(settings.font)
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { settings.font = pos }
-                override fun onNothingSelected(p: AdapterView<*>?) {}
-            }
-        })
-
         label("文字の色")
         val colors = listOf("白" to Color.WHITE, "黄" to 0xFFFFEB3B.toInt(), "水色" to 0xFF4FC3F7.toInt(),
             "緑" to 0xFF81C784.toInt(), "桃" to 0xFFF48FB1.toInt(), "黒" to Color.BLACK)
@@ -103,36 +103,85 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             for ((name, c) in colors) addView(Button(this@MainActivity).apply {
                 text = name
-                setOnClickListener { settings.textColor = c }
+                setOnClickListener {
+                    settings.textColor = c
+                    refreshSamples()
+                }
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         })
 
+        // フォント：見本をタップして選ぶ
+        label("フォント（タップで選ぶ）")
+        Fonts.all.forEachIndexed { i, font ->
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                val p = dp(10f).toInt()
+                setPadding(p, p, p, p)
+                setOnClickListener {
+                    settings.font = i
+                    refreshSamples()
+                }
+            }
+            box.addView(TextView(this).apply {
+                text = font.name
+                textSize = 12f
+                setTextColor(Color.GRAY)
+            })
+            box.addView(TextView(this).apply {
+                text = "12:34"
+                textSize = 40f
+                typeface = font.time.typeface(this@MainActivity)
+                includeFontPadding = false
+            })
+            box.addView(TextView(this).apply {
+                text = ClockWidget.dateText(font)
+                textSize = 16f
+                typeface = font.date.typeface(this@MainActivity)
+                includeFontPadding = false
+            })
+            root.addView(box, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(8f).toInt() })
+            samples += box
+        }
+        refreshSamples()
+
         root.addView(Button(this).apply {
             text = "完了"
-            setOnClickListener { finishOk(widgetId) }
-        })
-        // ノッチ・ステータスバーにかからないよう、上下に余白を足す
+            setOnClickListener { finish() }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            .apply { topMargin = dp(16f).toInt() })
+
+        // ノッチ・ステータスバー・ナビゲーションバーにかからないよう、上下左右に余白を足す
         val base = root.paddingTop
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val b = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            v.setPadding(v.paddingLeft, base + b.top, v.paddingRight, base + b.bottom)
+            v.setPadding(base + b.left, base + b.top, base + b.right, base + b.bottom)
             insets
         }
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    /** 見本の文字色と、選んでいるフォントの枠を今の設定に合わせる。 */
+    private fun refreshSamples() {
+        val color = settings.textColor
+        // 黒い文字のときは明るい背景にする
+        val bg = if (Color.luminance(color) < 0.3f) 0xFFDDDDDD.toInt() else 0xFF202124.toInt()
+        samples.forEachIndexed { i, box ->
+            box.background = GradientDrawable().apply {
+                setColor(bg)
+                cornerRadius = dp(12f)
+                if (i == settings.font) setStroke(dp(3f).toInt(), 0xFF4FC3F7.toInt())
+            }
+            (box.getChildAt(1) as TextView).setTextColor(color)
+            (box.getChildAt(2) as TextView).setTextColor(color)
+        }
     }
 
     private fun listener(f: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
         override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) = f(p)
         override fun onStartTrackingTouch(sb: SeekBar) {}
         override fun onStopTrackingTouch(sb: SeekBar) {}
-    }
-
-    private fun finishOk(widgetId: Int) {
-        ClockWidget.updateAll(this)
-        if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-            setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
-        }
-        finish()
     }
 
     override fun onPause() {
