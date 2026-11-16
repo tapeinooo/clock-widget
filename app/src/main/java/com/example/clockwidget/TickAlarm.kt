@@ -7,7 +7,7 @@ import android.content.Intent
 import android.os.Build
 
 /**
- * 絵で出すフォントのときに、毎分0秒に描き直すための目覚まし。
+ * 毎分0秒に描き直すための目覚まし。
  * 画面が消えている間は起こさない種類にして、電池を使わないようにする（画面が付いたらすぐ届く）。
  */
 object TickAlarm {
