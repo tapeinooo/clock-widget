@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- アプリの更新：GitHub から新しい版を取ってきて入れる -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- アプリに入れたフォントのとき、毎分描き直すための常駐（TickService） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -42,6 +46,10 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="時計ウィジェットを毎分描き直す" />
         </service>
+
+        <receiver
+            android:name=".UpdateReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".ClockWidgetReceiver"

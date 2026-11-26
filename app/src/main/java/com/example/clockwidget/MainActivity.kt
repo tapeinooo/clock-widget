@@ -5,7 +5,11 @@ import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings as AndroidSettings
 import android.util.TypedValue
 import android.view.Gravity
 import android.widget.Button
@@ -33,6 +37,11 @@ class MainActivity : Activity() {
             ?: AppWidgetManager.INVALID_APPWIDGET_ID
         // 設定は今の値のままでも使えるので、戻るボタンで閉じてもウィジェットは置かれるようにする
         setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
+
+        Updater.syncAuto(this)
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -152,6 +161,52 @@ class MainActivity : Activity() {
             samples += box
         }
         refreshSamples()
+
+        // アプリの更新
+        label("アプリの更新")
+        root.addView(TextView(this).apply {
+            text = "今の版：${BuildConfig.VERSION_NAME}（${BuildConfig.GIT_SHA}）"
+            textSize = 13f
+            setTextColor(Color.GRAY)
+        })
+        val autoUpdate = Switch(this).apply {
+            text = "新しい版を自動で入れる（12時間ごとに確認）"
+            textSize = 16f
+            isChecked = settings.autoUpdate
+            setOnCheckedChangeListener { _, on ->
+                settings.autoUpdate = on
+                Updater.syncAuto(this@MainActivity)
+            }
+        }
+        root.addView(autoUpdate)
+        val status = TextView(this).apply { textSize = 14f; text = settings.updateStatus }
+        root.addView(status)
+        val updateButton = Button(this).apply { text = "今すぐ更新を確認" }
+        updateButton.setOnClickListener {
+            if (!packageManager.canRequestPackageInstalls()) {
+                // 「このアプリからのインストールを許可」の画面を開く
+                status.text = "この画面で許可してから、もう一度押してください"
+                startActivity(Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                return@setOnClickListener
+            }
+            updateButton.isEnabled = false
+            status.text = "確認しています…"
+            Thread {
+                val result = try {
+                    val r = Updater.fetchLatest()
+                    if (Updater.isNew(r)) {
+                        runOnUiThread { status.text = "新しい版を取ってきています…" }
+                        Updater.install(this, r)
+                        "新しい版を入れています"
+                    } else "最新です"
+                } catch (e: Exception) {
+                    "確認できませんでした：${e.message}"
+                }
+                settings.updateStatus = result
+                runOnUiThread { status.text = result; updateButton.isEnabled = true }
+            }.start()
+        }
+        root.addView(updateButton)
 
         root.addView(Button(this).apply {
             text = "完了"

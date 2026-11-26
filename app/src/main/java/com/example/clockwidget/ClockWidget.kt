@@ -232,6 +232,7 @@ object ClockWidget {
         val ticks = any && !textMode(Settings(context))
         if (any) UpdateAlarm.schedule(context, everyMinute = ticks) else UpdateAlarm.cancel(context)
         TickService.sync(context, ticks)
+        if (any) Updater.syncAuto(context)
     }
 }
 
