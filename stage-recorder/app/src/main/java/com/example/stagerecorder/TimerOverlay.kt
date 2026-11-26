@@ -22,9 +22,19 @@ import kotlin.math.abs
  * 他のアプリの上、画面上部のカメラのあたりに出す経過時間。
  * 指で動かせる（位置は覚える）。軽く触ると録音中の画面を開く。表示中は画面を消さない。
  */
-class TimerOverlay(private val ctx: Context) {
+class TimerOverlay(private val base: Context) {
+    /**
+     * 重ねて出す窓のための Context。常駐（Service）の Context のままだと画面の情報が取れず、
+     * 新しい Android では落ちることがあるので、窓用の Context を作って使う。
+     */
+    private val ctx: Context = if (Build.VERSION.SDK_INT >= 30) {
+        val display = base.getSystemService(android.hardware.display.DisplayManager::class.java)
+            .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+        base.createDisplayContext(display)
+            .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
+    } else base
     private val wm = ctx.getSystemService(WindowManager::class.java)
-    private val prefs = Prefs(ctx)
+    private val prefs = Prefs(base)
     private val handler = Handler(Looper.getMainLooper())
     private var view: TextView? = null
     private var params: WindowManager.LayoutParams? = null
@@ -42,8 +52,19 @@ class TimerOverlay(private val ctx: Context) {
 
     val shown get() = view != null
 
-    @SuppressLint("ClickableViewAccessibility")
+    /** 出せなかったときも録音は止めない */
     fun show() {
+        try {
+            showInner()
+        } catch (e: Exception) {
+            view = null
+            handler.removeCallbacks(tick)
+            CrashLog.note(base, "時間表示を出せませんでした", e)
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun showInner() {
         if (view != null || !Settings.canDrawOverlays(ctx)) return
         val tv = TextView(ctx).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, prefs.overlaySp.toFloat())
@@ -98,8 +119,10 @@ class TimerOverlay(private val ctx: Context) {
     /** 画面の向きが変わったとき：自分で動かしていなければカメラの真下へ置き直す */
     fun onRotated() {
         val v = view ?: return
-        placeAt(savedOrDefault())
-        params?.let { try { wm.updateViewLayout(v, it) } catch (_: Exception) {} }
+        try {
+            placeAt(savedOrDefault())
+            params?.let { wm.updateViewLayout(v, it) }
+        } catch (_: Exception) {}
     }
 
     private fun savedOrDefault(): Pair<Int, Int> {
@@ -127,6 +150,10 @@ class TimerOverlay(private val ctx: Context) {
     }
 
     private fun update() {
+        try { updateInner() } catch (_: Exception) {}
+    }
+
+    private fun updateInner() {
         val v = view ?: return
         val ms = RecState.elapsedMs()
         val paused = RecState.phase.value == RecState.Phase.PAUSED
@@ -177,7 +204,7 @@ class TimerOverlay(private val ctx: Context) {
                         prefs.overlayCx = cx
                         prefs.overlayY = lp.y
                     } else {
-                        ctx.startActivity(
+                        base.startActivity(
                             Intent(ctx, RecordActivity::class.java)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                         )

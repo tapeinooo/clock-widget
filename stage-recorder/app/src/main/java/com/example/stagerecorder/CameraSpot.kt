@@ -9,18 +9,19 @@ import android.view.WindowManager
 object CameraSpot {
     /** 今の向きでの画面の幅と高さ */
     fun screenSize(c: Context): Pair<Int, Int> {
-        val wm = c.getSystemService(WindowManager::class.java)
-        return if (Build.VERSION.SDK_INT >= 30) {
-            val b = wm.currentWindowMetrics.bounds
-            b.width() to b.height()
-        } else {
-            val dm = c.resources.displayMetrics
-            dm.widthPixels to dm.heightPixels
+        if (Build.VERSION.SDK_INT >= 30) try {
+            val b = c.getSystemService(WindowManager::class.java).currentWindowMetrics.bounds
+            return b.width() to b.height()
+        } catch (_: Exception) {
         }
+        val dm = c.resources.displayMetrics
+        return dm.widthPixels to dm.heightPixels
     }
 
     /** 画面上端にかかっているカメラの枠。無ければ null */
-    fun topCutout(c: Context): Rect? {
+    fun topCutout(c: Context): Rect? = try { topCutoutInner(c) } catch (_: Exception) { null }
+
+    private fun topCutoutInner(c: Context): Rect? {
         val wm = c.getSystemService(WindowManager::class.java)
         val cutout = if (Build.VERSION.SDK_INT >= 30) {
             wm.currentWindowMetrics.windowInsets.displayCutout

@@ -82,7 +82,10 @@ class RecorderService : LifecycleService() {
         instance = this
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "録音・録画中", NotificationManager.IMPORTANCE_LOW))
-        overlay = TimerOverlay(this)
+        overlay = try { TimerOverlay(this) } catch (e: Exception) {
+            CrashLog.note(this, "時間表示を用意できませんでした", e)
+            null
+        }
     }
 
     override fun onDestroy() {
@@ -124,7 +127,11 @@ class RecorderService : LifecycleService() {
         val want = !overlaySuppressed && RecState.phase.value.let {
             it == RecState.Phase.RECORDING || it == RecState.Phase.PAUSED
         }
-        if (want) overlay?.show() else overlay?.hide()
+        try {
+            if (want) overlay?.show() else overlay?.hide()
+        } catch (e: Exception) {
+            CrashLog.note(this, "時間表示の切り替えに失敗しました", e)
+        }
     }
 
     private fun begin() {

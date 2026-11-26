@@ -239,6 +239,7 @@ class MainActivity : AppCompatActivity() {
         showVersion(null)
 
         setContentView(scroll)
+        showProblems()
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -266,6 +267,28 @@ class MainActivity : AppCompatActivity() {
         refreshList()
         // 開くたびに自動で確認（30分に1回まで）
         if (System.currentTimeMillis() - lastAutoCheck > 30 * 60_000L) checkUpdate(manual = false)
+    }
+
+    /** 前回落ちた・うまく動かなかった記録があれば見せる（コピーして送ってもらう用） */
+    private fun showProblems() {
+        val text = CrashLog.take(this) ?: return
+        val tv = TextView(this).apply {
+            this.text = text
+            textSize = 11f
+            setTextIsSelectable(true)
+            val p = dp(16f).toInt()
+            setPadding(p, p, p, p)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("前回うまく動かなかったときの記録")
+            .setView(ScrollView(this).apply { addView(tv) })
+            .setPositiveButton("コピー") { _, _ ->
+                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("記録", text))
+                Toast.makeText(this, "コピーしました。チャットに貼って送ってください", Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton("閉じる", null)
+            .show()
     }
 
     // ---- 更新 ----
