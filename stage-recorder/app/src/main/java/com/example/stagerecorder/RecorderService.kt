@@ -14,7 +14,8 @@ import android.hardware.display.DisplayManager
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
-import android.os.ParcelFileDescriptor
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.view.Display
 import android.widget.Toast
@@ -33,6 +34,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
+import java.io.File
+import kotlin.concurrent.thread
 
 /**
  * 録音・録画の本体。通知を出して常駐するので、他のアプリを開いても画面を消しても続く。
@@ -70,8 +73,9 @@ class RecorderService : LifecycleService() {
     private var recording: Recording? = null
 
     private var mediaRecorder: MediaRecorder? = null
-    private var audioUri: Uri? = null
-    private var audioFd: ParcelFileDescriptor? = null
+    private var audioFile: File? = null
+    private var audioName = ""
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
@@ -86,7 +90,7 @@ class RecorderService : LifecycleService() {
         instance = null
         if (RecState.phase.value != RecState.Phase.IDLE) {
             // 途中で止められた
-            releaseAudio(save = true)
+            releaseAudio(null)
             recording?.stop()
             cameraProvider?.unbindAll()
             RecState.idle()
@@ -124,7 +128,8 @@ class RecorderService : LifecycleService() {
     }
 
     private fun begin() {
-        if (RecState.active) return
+        // STARTING は押した画面の側で先に立てている
+        if (RecState.active && RecState.phase.value != RecState.Phase.STARTING) return
         val prefs = Prefs(this)
         val video = prefs.video
         RecState.starting(video, prefs.targetMin)
@@ -135,61 +140,78 @@ class RecorderService : LifecycleService() {
         try {
             ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(), type)
         } catch (e: Exception) {
-            fail("常駐を始められませんでした: ${e.message}")
+            fail("常駐を始められませんでした", e)
             return
         }
         if (video) beginVideo(prefs) else beginAudio()
     }
 
     // ---- 録音（音声のみ）----
+    // アプリ内のファイルに録り、止めたら「音楽」フォルダへ写す
+    // （端末の保存場所へ直接録ると、MP4 の書き終わりで失敗する端末があるため）
+
+    private fun newRecorder(): MediaRecorder =
+        if (Build.VERSION.SDK_INT >= 31) MediaRecorder(this) else @Suppress("DEPRECATION") MediaRecorder()
 
     private fun beginAudio() {
-        val uri = Library.createPendingAudio(this, Library.newName())
-        if (uri == null) {
-            fail("保存先を作れませんでした")
-            return
+        val dir = File(filesDir, "recording")
+        dir.mkdirs()
+        dir.listFiles()?.forEach { it.delete() } // 前に途中で終わった残り（中身は壊れている）
+        val name = Library.newName()
+        val file = File(dir, "$name.m4a")
+        var lastError: Exception? = null
+        // 48kHz がだめな端末もあるので順に試す
+        for (rate in listOf(48_000, 44_100, 16_000)) {
+            val mr = newRecorder()
+            try {
+                mr.setAudioSource(MediaRecorder.AudioSource.MIC)
+                mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                mr.setAudioEncodingBitRate(if (rate >= 44_100) 128_000 else 64_000)
+                mr.setAudioSamplingRate(rate)
+                mr.setAudioChannels(1)
+                mr.setOutputFile(file.absolutePath)
+                mr.prepare()
+                mr.start()
+                mediaRecorder = mr
+                audioFile = file
+                audioName = name
+                onStarted()
+                return
+            } catch (e: Exception) {
+                lastError = e
+                mr.release()
+                file.delete()
+            }
         }
-        try {
-            val fd = contentResolver.openFileDescriptor(uri, "w")!!
-            val mr = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(this) else @Suppress("DEPRECATION") MediaRecorder()
-            mr.setAudioSource(MediaRecorder.AudioSource.MIC)
-            mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            mr.setAudioEncodingBitRate(128_000)
-            mr.setAudioSamplingRate(48_000)
-            mr.setAudioChannels(1)
-            mr.setOutputFile(fd.fileDescriptor)
-            mr.prepare()
-            mr.start()
-            mediaRecorder = mr
-            audioUri = uri
-            audioFd = fd
-            onStarted()
-        } catch (e: Exception) {
-            contentResolver.delete(uri, null, null)
-            fail("録音を始められませんでした: ${e.message}")
-        }
+        fail("録音を始められませんでした", lastError)
     }
 
-    /** @return 保存できたか */
-    private fun releaseAudio(save: Boolean): Boolean {
-        val mr = mediaRecorder ?: return false
-        val uri = audioUri
-        var ok = save
+    /** 録音を止める。保存（写すこと）は別の流れで行い、終わったら then(保存できたか) */
+    private fun releaseAudio(then: ((Boolean) -> Unit)?) {
+        val mr = mediaRecorder ?: return
+        val file = audioFile
+        val name = audioName
+        var ok = true
         try {
             mr.stop()
         } catch (_: Exception) {
             ok = false // 短すぎる等で中身がない
         }
         mr.release()
-        try { audioFd?.close() } catch (_: Exception) {}
         mediaRecorder = null
-        audioFd = null
-        audioUri = null
-        if (uri != null) {
-            if (ok) Library.publish(this, uri) else contentResolver.delete(uri, null, null)
+        audioFile = null
+        if (file == null) return
+        if (!ok || file.length() == 0L) {
+            file.delete()
+            then?.invoke(false)
+            return
         }
-        return ok
+        thread {
+            val uri = Library.saveFile(this, file, "$name.m4a", false)
+            if (uri != null) file.delete() // 写せなかったときは消さずに残す
+            mainHandler.post { then?.invoke(uri != null) }
+        }
     }
 
     // ---- 録画（映像＋音声）----
@@ -228,7 +250,7 @@ class RecorderService : LifecycleService() {
                     .start(ContextCompat.getMainExecutor(this)) { e -> onVideoEvent(e) }
             } catch (e: Exception) {
                 cameraProvider?.unbindAll()
-                fail("録画を始められませんでした: ${e.message}")
+                fail("録画を始められませんでした", e)
             }
         }, ContextCompat.getMainExecutor(this))
     }
@@ -298,17 +320,20 @@ class RecorderService : LifecycleService() {
         RecState.finishing()
         overlay?.hide()
         if (mediaRecorder != null) {
-            val ok = releaseAudio(save = true)
-            Toast.makeText(this, if (ok) "録音を保存しました" else "録音を保存できませんでした", Toast.LENGTH_SHORT).show()
-            if (ok) RecState.savedCount.value++
-            done()
+            releaseAudio { ok ->
+                Toast.makeText(this, if (ok) "録音を保存しました" else "録音を保存できませんでした", Toast.LENGTH_SHORT).show()
+                if (ok) RecState.savedCount.value++
+                done()
+            }
         } else {
             val r = recording
             if (r != null) r.stop() else done() // 書き終わりは onVideoEvent(Finalize) で
         }
     }
 
-    private fun fail(msg: String) {
+    private fun fail(msg: String, e: Exception? = null) {
+        // 画面に理由ごと出す（トーストだとすぐ消えるので）
+        RecState.lastError.value = msg + (e?.let { "\n\n${it.javaClass.simpleName}: ${it.message}" } ?: "")
         Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         done()
     }

@@ -13,6 +13,8 @@ object RecState {
     val preview = MutableStateFlow<Preview?>(null)
     /** 保存するたびに増える（一覧の読み直しの合図） */
     val savedCount = MutableStateFlow(0)
+    /** 始められなかった等の理由（画面に出したら null に戻す） */
+    val lastError = MutableStateFlow<String?>(null)
 
     var isVideo = false
         internal set
@@ -29,7 +31,7 @@ object RecState {
     fun elapsedMs(): Long =
         accumulated + if (phase.value == Phase.RECORDING) SystemClock.elapsedRealtime() - runningSince else 0L
 
-    internal fun starting(video: Boolean, target: Int) {
+    fun starting(video: Boolean, target: Int) {
         isVideo = video
         targetMin = target
         accumulated = 0

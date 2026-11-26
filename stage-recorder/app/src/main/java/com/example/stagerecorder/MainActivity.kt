@@ -12,6 +12,7 @@ import android.text.format.DateFormat
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -44,6 +45,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startBtn: MaterialButton
     private lateinit var overlayBtn: MaterialButton
     private lateinit var listBox: LinearLayout
+    private lateinit var selectBtn: MaterialButton
+    private lateinit var deleteSelectedBtn: MaterialButton
+    private var items: List<Rec> = emptyList()
+    private var selecting = false
+    private val selected = mutableSetOf<Uri>()
     private val videoOnly = mutableListOf<View>()
 
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
@@ -157,7 +163,34 @@ class MainActivity : AppCompatActivity() {
         })
 
         // 一覧
-        label("録ったもの（触ると切り出し編集・長押しでその他）", 24f)
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(24f).toInt(), 0, 0)
+        }
+        head.addView(TextView(this).apply {
+            text = "録ったもの"
+            textSize = 15f
+            setTextColor(0xFFBBBBBB.toInt())
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        selectBtn = MaterialButton(this, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
+            text = "選んで削除"
+            setOnClickListener { setSelecting(!selecting) }
+        }
+        head.addView(selectBtn)
+        root.addView(head)
+        root.addView(TextView(this).apply {
+            text = "触ると切り出し編集。長押しで共有・名前の変更など。"
+            textSize = 13f
+            setTextColor(0xFF999999.toInt())
+        })
+        deleteSelectedBtn = MaterialButton(this).apply {
+            setBackgroundColor(0xFFD32F2F.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            visibility = View.GONE
+            setOnClickListener { confirmDelete(items.filter { it.uri in selected }) }
+        }
+        root.addView(deleteSelectedBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8f).toInt() })
         listBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listBox)
 
@@ -165,7 +198,19 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                RecState.phase.combine(RecState.savedCount) { a, b -> a to b }.collect { updateStart(); refreshList() }
+                launch {
+                    RecState.phase.combine(RecState.savedCount) { a, b -> a to b }.collect { updateStart(); refreshList() }
+                }
+                RecState.lastError.collect { msg ->
+                    if (msg != null) {
+                        RecState.lastError.value = null
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("始められませんでした")
+                            .setMessage(msg)
+                            .setPositiveButton("OK", null)
+                            .show()
+                    }
+                }
             }
         }
     }
@@ -231,7 +276,14 @@ class MainActivity : AppCompatActivity() {
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this, "カメラのあたりに時間を出すには「表示を許可する」から許可してください", Toast.LENGTH_LONG).show()
         }
-        RecorderService.start(this)
+        RecState.starting(prefs.video, prefs.targetMin)
+        try {
+            RecorderService.start(this)
+        } catch (e: Exception) {
+            RecState.idle()
+            RecState.lastError.value = "録り始められませんでした\n\n${e.javaClass.simpleName}: ${e.message}"
+            return
+        }
         startActivity(Intent(this, RecordActivity::class.java))
     }
 
@@ -245,9 +297,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showList(items: List<Rec>) {
+    private fun setSelecting(on: Boolean) {
+        selecting = on
+        selected.clear()
+        selectBtn.text = if (on) "やめる" else "選んで削除"
+        showList(items)
+    }
+
+    private fun updateDeleteSelected() {
+        deleteSelectedBtn.visibility = if (selecting) View.VISIBLE else View.GONE
+        deleteSelectedBtn.isEnabled = selected.isNotEmpty()
+        deleteSelectedBtn.text = if (selected.isEmpty()) "削除するものを選んでください" else "選んだ${selected.size}件を削除"
+    }
+
+    private fun showList(list: List<Rec>) {
+        items = list
+        selected.retainAll(list.map { it.uri }.toSet())
         listBox.removeAllViews()
-        if (items.isEmpty()) {
+        updateDeleteSelected()
+        if (list.isEmpty()) {
             listBox.addView(TextView(this).apply {
                 text = "まだありません"
                 setTextColor(0xFF888888.toInt())
@@ -257,31 +325,57 @@ class MainActivity : AppCompatActivity() {
         }
         val fmt = DateFormat.getMediumDateFormat(this)
         val tf = DateFormat.getTimeFormat(this)
-        for (r in items) {
+        for (r in list) {
             val row = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                val p = dp(10f).toInt()
-                setPadding(0, p, 0, p)
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
                 isClickable = true
                 isFocusable = true
                 val tv = TypedValue()
                 theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
                 setBackgroundResource(tv.resourceId)
-                setOnClickListener { openEditor(r) }
-                setOnLongClickListener { showMenu(r); true }
             }
-            row.addView(TextView(this).apply {
+            val check = CheckBox(this).apply {
+                isChecked = r.uri in selected
+                visibility = if (selecting) View.VISIBLE else View.GONE
+                isClickable = false // 行ごと触って切り替える
+            }
+            row.addView(check)
+            val texts = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                val p = dp(10f).toInt()
+                setPadding(0, p, 0, p)
+            }
+            texts.addView(TextView(this).apply {
                 text = (if (r.isVideo) "🎥 " else "🎙 ") + r.name
                 textSize = 16f
                 setTextColor(0xFFFFFFFF.toInt())
             })
             val d = Date(r.dateMs)
             val dur = if (r.durationMs > 0) "　${fmtClock(r.durationMs)}" else ""
-            row.addView(TextView(this).apply {
+            texts.addView(TextView(this).apply {
                 text = "${fmt.format(d)} ${tf.format(d)}$dur　${fmtSize(r.size)}"
                 textSize = 13f
                 setTextColor(0xFF999999.toInt())
             })
+            row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+            if (!selecting) {
+                row.addView(MaterialButton(this, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
+                    text = "削除"
+                    setTextColor(0xFFFF6B5E.toInt())
+                    setOnClickListener { confirmDelete(listOf(r)) }
+                })
+            }
+            row.setOnClickListener {
+                if (selecting) {
+                    if (!selected.add(r.uri)) selected.remove(r.uri)
+                    check.isChecked = r.uri in selected
+                    updateDeleteSelected()
+                } else openEditor(r)
+            }
+            row.setOnLongClickListener {
+                if (selecting) false else { showMenu(r); true }
+            }
             listBox.addView(row)
         }
     }
@@ -298,7 +392,7 @@ class MainActivity : AppCompatActivity() {
                     0 -> openEditor(r)
                     1 -> share(r)
                     2 -> rename(r)
-                    3 -> confirmDelete(r)
+                    3 -> confirmDelete(listOf(r))
                 }
             }
             .show()
@@ -337,27 +431,36 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun confirmDelete(r: Rec) {
+    private fun confirmDelete(list: List<Rec>) {
+        if (list.isEmpty()) return
         AlertDialog.Builder(this)
-            .setTitle("削除しますか？")
-            .setMessage(r.name)
-            .setPositiveButton("削除") { _, _ -> delete(r.uri) }
+            .setTitle(if (list.size == 1) "削除しますか？" else "${list.size}件を削除しますか？")
+            .setMessage(list.joinToString("\n") { it.name })
+            .setPositiveButton("削除") { _, _ -> delete(list.map { it.uri }) }
             .setNegativeButton("やめる", null)
             .show()
     }
 
-    private fun delete(uri: Uri) {
-        try {
-            contentResolver.delete(uri, null, null)
-            refreshList()
-        } catch (e: SecurityException) {
-            // 入れ直す前に録ったもの等は、端末に確認してから消す
-            if (Build.VERSION.SDK_INT >= 30) {
-                val pi = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
-                deleteRequest.launch(IntentSenderRequest.Builder(pi.intentSender).build())
-            } else {
-                Toast.makeText(this, "削除できませんでした", Toast.LENGTH_SHORT).show()
+    private fun delete(uris: List<Uri>) {
+        val refused = mutableListOf<Uri>()
+        for (u in uris) {
+            try {
+                contentResolver.delete(u, null, null)
+            } catch (_: SecurityException) {
+                refused += u // 入れ直す前に録ったもの等
+            } catch (_: Exception) {
             }
         }
+        if (selecting) setSelecting(false)
+        if (refused.isNotEmpty()) {
+            if (Build.VERSION.SDK_INT >= 30) {
+                // 端末に確認してから消す
+                val pi = MediaStore.createDeleteRequest(contentResolver, refused)
+                deleteRequest.launch(IntentSenderRequest.Builder(pi.intentSender).build())
+            } else {
+                Toast.makeText(this, "${refused.size}件は削除できませんでした", Toast.LENGTH_SHORT).show()
+            }
+        }
+        refreshList()
     }
 }
