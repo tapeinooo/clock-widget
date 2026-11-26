@@ -11,8 +11,10 @@ android {
         applicationId = "com.example.stagerecorder"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        // GitHub Actions のビルド番号を版の番号にする（新しい版の判定に使う）
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "1.2.$build"
     }
 
     signingConfigs {
@@ -35,6 +37,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+    buildFeatures {
+        buildConfig = true
     }
     kotlinOptions {
         jvmTarget = "17"

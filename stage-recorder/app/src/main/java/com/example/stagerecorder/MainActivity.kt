@@ -39,6 +39,9 @@ import kotlinx.coroutines.launch
 import java.util.Date
 import kotlin.concurrent.thread
 
+/** 自動の更新確認をした時刻（アプリが動いている間だけ覚える） */
+private var lastAutoCheck = 0L
+
 /** はじめの画面：録り始める・設定・録ったものの一覧。 */
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: Prefs
@@ -47,6 +50,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var listBox: LinearLayout
     private lateinit var selectBtn: MaterialButton
     private lateinit var deleteSelectedBtn: MaterialButton
+    private lateinit var updateBanner: LinearLayout
+    private lateinit var updateBannerText: TextView
+    private lateinit var versionText: TextView
+    private var available: Updater.Info? = null
+    private var checking = false
     private var items: List<Rec> = emptyList()
     private var selecting = false
     private val selected = mutableSetOf<Uri>()
@@ -93,6 +101,29 @@ class MainActivity : AppCompatActivity() {
             textSize = 24f
             setTextColor(0xFFFFFFFF.toInt())
         })
+
+        // 新しい版があるときだけ出す
+        updateBanner = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val p = dp(12f).toInt()
+            setPadding(p, dp(4f).toInt(), dp(4f).toInt(), dp(4f).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(12f)
+                setColor(0xFF1E3A5F.toInt())
+            }
+            visibility = View.GONE
+        }
+        updateBannerText = TextView(this).apply {
+            textSize = 14f
+            setTextColor(0xFFFFFFFF.toInt())
+        }
+        updateBanner.addView(updateBannerText, LinearLayout.LayoutParams(0, -2, 1f))
+        updateBanner.addView(MaterialButton(this).apply {
+            text = "更新"
+            setOnClickListener { available?.let { startUpdate(it) } }
+        })
+        root.addView(updateBanner, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12f).toInt() })
 
         startBtn = MaterialButton(this).apply {
             textSize = 20f
@@ -194,6 +225,19 @@ class MainActivity : AppCompatActivity() {
         listBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(listBox)
 
+        // 版と更新
+        label("アプリの版", 32f)
+        versionText = TextView(this).apply {
+            textSize = 14f
+            setTextColor(0xFFFFFFFF.toInt())
+        }
+        root.addView(versionText)
+        root.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "更新を確認"
+            setOnClickListener { checkUpdate(manual = true) }
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f).toInt() })
+        showVersion(null)
+
         setContentView(scroll)
 
         lifecycleScope.launch {
@@ -220,6 +264,79 @@ class MainActivity : AppCompatActivity() {
         overlayBtn.text = if (Settings.canDrawOverlays(this)) "表示の許可：済み" else "表示を許可する（他のアプリの上に重ねる）"
         updateStart()
         refreshList()
+        // 開くたびに自動で確認（30分に1回まで）
+        if (System.currentTimeMillis() - lastAutoCheck > 30 * 60_000L) checkUpdate(manual = false)
+    }
+
+    // ---- 更新 ----
+
+    private fun showVersion(latest: Updater.Info?) {
+        val cur = "今の版: ${BuildConfig.VERSION_NAME}（ビルド ${Updater.current}）"
+        versionText.text = when {
+            latest == null -> cur
+            latest.versionCode > Updater.current -> "$cur\n新しい版: ビルド ${latest.versionCode}"
+            else -> "$cur\n最新です"
+        }
+        val newer = latest != null && latest.versionCode > Updater.current
+        available = if (newer) latest else null
+        updateBanner.visibility = if (newer) View.VISIBLE else View.GONE
+        if (newer) updateBannerText.text = "新しい版があります（ビルド ${latest!!.versionCode}）"
+    }
+
+    private fun checkUpdate(manual: Boolean) {
+        if (checking) return
+        checking = true
+        if (!manual) lastAutoCheck = System.currentTimeMillis()
+        if (manual) versionText.text = "確認しています…"
+        thread {
+            val info = Updater.fetch()
+            runOnUiThread {
+                checking = false
+                if (isDestroyed) return@runOnUiThread
+                showVersion(info)
+                if (!manual) return@runOnUiThread
+                when {
+                    info == null -> Toast.makeText(this, "確認できませんでした（通信を確かめてください）", Toast.LENGTH_LONG).show()
+                    info.versionCode > Updater.current -> startUpdate(info)
+                    else -> Toast.makeText(this, "最新です", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun startUpdate(info: Updater.Info) {
+        if (RecState.active) {
+            Toast.makeText(this, "録っている間は更新できません。止めてからにしてください", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!Updater.canInstall(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("インストールの許可")
+                .setMessage("このアプリから新しい版を入れるには、次の画面で「この提供元のアプリを許可」をオンにして、戻ってきてからもう一度「更新」を押してください。")
+                .setPositiveButton("設定を開く") { _, _ -> Updater.openInstallPermission(this) }
+                .setNegativeButton("やめる", null)
+                .show()
+            return
+        }
+        val bar = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }
+        val box = LinearLayout(this).apply {
+            val p = dp(24f).toInt()
+            setPadding(p, p, p, 0)
+            addView(bar, LinearLayout.LayoutParams(-1, -2))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("新しい版を取得しています…")
+            .setView(box)
+            .setCancelable(false)
+            .show()
+        thread {
+            val result = runCatching { Updater.download(this, info) { p -> runOnUiThread { bar.progress = p } } }
+            runOnUiThread {
+                dialog.dismiss()
+                result.onSuccess { Updater.install(this, it) }
+                    .onFailure { Toast.makeText(this, "取得できませんでした: ${it.message}", Toast.LENGTH_LONG).show() }
+            }
+        }
     }
 
     private fun radio(items: List<String>, checked: Int, onPick: (Int) -> Unit): RadioGroup =
