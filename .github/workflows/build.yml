@@ -2,6 +2,9 @@ name: build
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "stage-recorder/**"
+      - ".github/workflows/stage-recorder.yml"
   workflow_dispatch:
 permissions:
   contents: write

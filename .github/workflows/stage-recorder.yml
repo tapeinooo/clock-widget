@@ -1,0 +1,30 @@
+name: stage-recorder
+on:
+  push:
+    paths:
+      - "stage-recorder/**"
+      - ".github/workflows/stage-recorder.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stage-recorder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew assembleRelease
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk stage-recorder.apk
+          gh release delete stage-recorder --yes --cleanup-tag || true
+          gh release create stage-recorder stage-recorder.apk --target "$GITHUB_SHA" --title "登壇レコーダー 最新版" --notes "ブランチ ${GITHUB_REF_NAME} / コミット ${GITHUB_SHA::7}" --latest=false

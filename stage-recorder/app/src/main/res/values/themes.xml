@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Stage" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#FFFF6B5E</item>
+        <item name="colorOnPrimary">#FF2B0000</item>
+        <item name="android:windowBackground">#FF101014</item>
+    </style>
+</resources>
