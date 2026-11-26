@@ -1,4 +1,4 @@
-# たっぴぃず録音
+# たぺいの録音
 
 壇上で話すときに使う、自分用の Android アプリ。
 
@@ -16,7 +16,7 @@
 
 ## 入れ方
 
-push すると GitHub Actions で APK を作り、Releases の「たっぴぃず録音 最新版」（タグ `stage-recorder`）に載せる。
+push すると GitHub Actions で APK を作り、Releases の「たぺいの録音 最新版」（タグ `stage-recorder`）に載せる。
 スマホでそこから `stage-recorder.apk` を開いて入れる。
 
 一度入れたあとは、アプリを開くたびに新しい版を自動で確認し（30分に1回まで）、あれば上に「更新」ボタンが出る。
