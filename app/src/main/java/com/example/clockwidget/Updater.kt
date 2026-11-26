@@ -9,26 +9,17 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.Worker
-import androidx.work.WorkerParameters
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.TimeUnit
 
 /**
  * アプリの更新。GitHub の Releases の「最新版」（push のたびに GitHub Actions が作り直す）を見て、
- * 今入っている版（BuildConfig.GIT_SHA）と違えば新しい版として APK を取ってきて入れる。
+ * 今入っている版（BuildConfig.GIT_SHA）と違えば新しい版として APK を取ってきて入れる（設定画面のボタンから）。
  */
 object Updater {
     private const val API = "https://api.github.com/repos/tapeinooo/clock-widget/releases/tags/latest"
-    private const val WORK = "auto_update"
     private const val CHANNEL = "update"
 
     class Release(val sha: String, val url: String)
@@ -83,47 +74,12 @@ object Updater {
         }
     }
 
-    /** 自動更新を、設定に合わせて始める・止める（12時間ごとに確認）。 */
-    fun syncAuto(context: Context) {
-        val wm = WorkManager.getInstance(context)
-        if (Settings(context).autoUpdate) {
-            val req = PeriodicWorkRequestBuilder<UpdateWorker>(12, TimeUnit.HOURS)
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .build()
-            wm.enqueueUniquePeriodicWork(WORK, ExistingPeriodicWorkPolicy.KEEP, req)
-        } else {
-            wm.cancelUniqueWork(WORK)
-        }
-    }
-
     fun notify(context: Context, title: String, intent: Intent? = null) {
         val m = context.getSystemService(NotificationManager::class.java)
         m.createNotificationChannel(NotificationChannel(CHANNEL, "アプリの更新", NotificationManager.IMPORTANCE_DEFAULT))
         val b = Notification.Builder(context, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download_done).setContentTitle(title).setAutoCancel(true)
         if (intent != null) b.setContentIntent(PendingIntent.getActivity(context, 2, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         try { m.notify(2, b.build()) } catch (_: SecurityException) { }
-    }
-}
-
-class UpdateWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
-    override fun doWork(): Result {
-        val s = Settings(applicationContext)
-        return try {
-            val r = Updater.fetchLatest()
-            if (!Updater.isNew(r)) {
-                s.updateStatus = "最新です"
-            } else if (applicationContext.packageManager.canRequestPackageInstalls()) {
-                Updater.install(applicationContext, r)
-            } else {
-                s.updateStatus = "新しい版があります（この版を入れる許可がありません）"
-                Updater.notify(applicationContext, "時計の新しい版があります。アプリを開いて更新してください",
-                    Intent(applicationContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            }
-            Result.success()
-        } catch (e: Exception) {
-            s.updateStatus = "確認できませんでした：${e.message}"
-            Result.retry()
-        }
     }
 }
 

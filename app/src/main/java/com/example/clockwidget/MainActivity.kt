@@ -38,7 +38,6 @@ class MainActivity : Activity() {
         // 設定は今の値のままでも使えるので、戻るボタンで閉じてもウィジェットは置かれるようにする
         setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
 
-        Updater.syncAuto(this)
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
         }
@@ -169,16 +168,6 @@ class MainActivity : Activity() {
             textSize = 13f
             setTextColor(Color.GRAY)
         })
-        val autoUpdate = Switch(this).apply {
-            text = "新しい版を自動で入れる（12時間ごとに確認）"
-            textSize = 16f
-            isChecked = settings.autoUpdate
-            setOnCheckedChangeListener { _, on ->
-                settings.autoUpdate = on
-                Updater.syncAuto(this@MainActivity)
-            }
-        }
-        root.addView(autoUpdate)
         val status = TextView(this).apply { textSize = 14f; text = settings.updateStatus }
         root.addView(status)
         val updateButton = Button(this).apply { text = "今すぐ更新を確認" }

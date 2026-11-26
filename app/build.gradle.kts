@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.clockwidget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.7"
+        versionCode = 9
+        versionName = "1.8"
         // 更新の確認に使う、このアプリを作ったときのコミット（GitHub Actions が渡す）
         buildConfigField("String", "GIT_SHA", "\"${providers.gradleProperty("gitSha").orElse("dev").get()}\"")
     }
@@ -50,5 +50,4 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
 }

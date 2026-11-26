@@ -35,11 +35,6 @@ class Settings(context: Context) {
         get() = prefs.getInt("date_size", 1).coerceIn(0, 3)
         set(v) = prefs.edit().putInt("date_size", v.coerceIn(0, 3)).apply()
 
-    /** 新しい版を自動で入れる。 */
-    var autoUpdate: Boolean
-        get() = prefs.getBoolean("auto_update", true)
-        set(v) = prefs.edit().putBoolean("auto_update", v).apply()
-
     /** 最後に更新を確認した結果（設定画面に出す）。 */
     var updateStatus: String
         get() = prefs.getString("update_status", "")!!
