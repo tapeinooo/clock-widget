@@ -142,8 +142,33 @@ class MainActivity : AppCompatActivity() {
         videoOnly += radio(listOf("前面（自分を撮る）", "背面"), if (prefs.front) 0 else 1) { prefs.front = it == 0 }
             .also { root.addView(it) }
         videoOnly += label("画質")
-        videoOnly += radio(listOf("720p", "1080p"), if (prefs.fullHd) 1 else 0) { prefs.fullHd = it == 1 }
+        val sizeHint = TextView(this).apply {
+            textSize = 13f
+            setTextColor(0xFF999999.toInt())
+        }
+        fun showSizeHint() {
+            sizeHint.text = if (prefs.saving) {
+                // 映像＋音声（約0.13Mbps）で1時間あたり
+                val mb = (prefs.savingBitRate() + 130_000) / 8.0 * 3600 / 1_000_000
+                val est = if (mb >= 1000) "%.1fGB".format(mb / 1000) else "%.0fMB".format(mb)
+                "1時間でおよそ $est（話す姿を撮るには十分。動きの多い場面は粗くなります）"
+            } else {
+                "端末まかせのきれいさ。1時間でおよそ " + when (prefs.quality) {
+                    0 -> "1〜2GB"
+                    1 -> "3〜4GB"
+                    else -> "5〜8GB"
+                }
+            }
+        }
+        videoOnly += radio(listOf("480p", "720p", "1080p"), prefs.quality) { prefs.quality = it; showSizeHint() }
             .also { root.addView(it) }
+        videoOnly += label("容量", 8f)
+        videoOnly += radio(listOf("標準", "節約（小さく保存）"), if (prefs.saving) 1 else 0) {
+            prefs.saving = it == 1
+            showSizeHint()
+        }.also { root.addView(it) }
+        videoOnly += sizeHint.also { root.addView(it) }
+        showSizeHint()
         videoOnly += MaterialSwitch(this).apply {
             text = "録っている間の画面に映像を映す"
             isChecked = prefs.showPreview

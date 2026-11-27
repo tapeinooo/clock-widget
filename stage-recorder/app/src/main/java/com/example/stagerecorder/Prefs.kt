@@ -16,10 +16,22 @@ class Prefs(c: Context) {
         get() = p.getBoolean("front", true)
         set(v) = p.edit().putBoolean("front", v).apply()
 
-    /** true: 1080p / false: 720p */
-    var fullHd: Boolean
-        get() = p.getBoolean("fullHd", true)
-        set(v) = p.edit().putBoolean("fullHd", v).apply()
+    /** 画質 0: 480p / 1: 720p / 2: 1080p（前の版の「1080p かどうか」も引き継ぐ） */
+    var quality: Int
+        get() = p.getInt("quality", if (p.getBoolean("fullHd", true)) 2 else 1)
+        set(v) = p.edit().putInt("quality", v).apply()
+
+    /** 容量を節約する（映像のビットレートを下げる） */
+    var saving: Boolean
+        get() = p.getBoolean("saving", false)
+        set(v) = p.edit().putBoolean("saving", v).apply()
+
+    /** 節約のときの映像のビットレート（bps） */
+    fun savingBitRate() = when (quality) {
+        0 -> 600_000
+        1 -> 1_200_000
+        else -> 2_500_000
+    }
 
     /** 持ち時間（分）。0 はなし。 */
     var targetMin: Int

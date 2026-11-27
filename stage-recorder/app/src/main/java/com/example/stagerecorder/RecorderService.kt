@@ -231,9 +231,14 @@ class RecorderService : LifecycleService() {
             try {
                 val provider = future.get()
                 cameraProvider = provider
-                val quality = if (prefs.fullHd) Quality.FHD else Quality.HD
+                val quality = when (prefs.quality) {
+                    0 -> Quality.SD
+                    1 -> Quality.HD
+                    else -> Quality.FHD
+                }
                 val recorder = Recorder.Builder()
                     .setQualitySelector(QualitySelector.from(quality, FallbackStrategy.lowerQualityOrHigherThan(quality)))
+                    .apply { if (prefs.saving) setTargetVideoEncodingBitRate(prefs.savingBitRate()) }
                     .build()
                 val rotation = getSystemService(DisplayManager::class.java)
                     .getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: 0
