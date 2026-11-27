@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 時計（輪・長針・短針・中心）。ノートのアイコンと同じく、白い絵を中央の円（直径 66）に収める -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 輪 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M54,28 A26,26 0 1 1 53.99,28 Z M54,33.5 A20.5,20.5 0 1 0 54.01,33.5 Z" />
+    <!-- 長針（上）と短針（右下） -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4"
+        android:pathData="M54,54 L54,39 M54,54 L64,60" />
+    <!-- 中心 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,50.5 A3.5,3.5 0 1 1 53.99,50.5 Z" />
+</vector>
