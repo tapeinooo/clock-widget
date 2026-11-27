@@ -15,14 +15,16 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * アプリの更新。GitHub の Releases の「最新版」（push のたびに GitHub Actions が作り直す）を見て、
- * 今入っている版（BuildConfig.GIT_SHA）と違えば新しい版として APK を取ってきて入れる（設定画面のボタンから）。
+ * アプリの更新（共通ルール）。GitHub の最新のリリース（タグ v＋versionName、添付の .apk）を見て、
+ * 今の版（versionName）より新しければ APK を取ってきて入れる（設定画面のボタンから）。
  */
 object Updater {
-    private const val API = "https://api.github.com/repos/tapeinooo/clock-widget/releases/tags/latest"
+    private const val API = "https://api.github.com/repos/tapeinooo/clock-widget/releases/latest"
     private const val CHANNEL = "update"
 
-    class Release(val sha: String, val url: String)
+    class Release(val version: String, val url: String) {
+        val tag get() = "v$version"
+    }
 
     /** 最新版を調べる。通信するので、画面のスレッドでは呼ばないこと。 */
     fun fetchLatest(): Release {
@@ -33,18 +35,29 @@ object Updater {
         try {
             if (c.responseCode != 200) error("GitHub から最新版を取れませんでした（${c.responseCode}）")
             val j = JSONObject(c.inputStream.bufferedReader().readText())
-            val sha = Regex("[0-9a-f]{7,40}").find(j.optString("body"))?.value ?: error("最新版の情報が読めませんでした")
+            val version = j.optString("tag_name").removePrefix("v").ifEmpty { error("最新版の情報が読めませんでした") }
             val assets = j.getJSONArray("assets")
             val url = (0 until assets.length()).map { assets.getJSONObject(it) }
                 .firstOrNull { it.getString("name").endsWith(".apk") }?.getString("browser_download_url")
                 ?: error("最新版に APK がありません")
-            return Release(sha, url)
+            return Release(version, url)
         } finally {
             c.disconnect()
         }
     }
 
-    fun isNew(r: Release) = !BuildConfig.GIT_SHA.startsWith(r.sha) && !r.sha.startsWith(BuildConfig.GIT_SHA)
+    fun isNew(r: Release) = isNewer(r.version, BuildConfig.VERSION_NAME)
+
+    /** "2.0.3" と "1.10" を数としてくらべる（a が新しければ true） */
+    fun isNewer(a: String, b: String): Boolean {
+        val x = a.split(".").map { it.toIntOrNull() ?: 0 }
+        val y = b.split(".").map { it.toIntOrNull() ?: 0 }
+        for (i in 0 until maxOf(x.size, y.size)) {
+            val d = x.getOrElse(i) { 0 } - y.getOrElse(i) { 0 }
+            if (d != 0) return d > 0
+        }
+        return false
+    }
 
     /** APK を取ってきて、入れる（今のアプリを置き換える）。通信するので、画面のスレッドでは呼ばないこと。 */
     fun install(context: Context, r: Release) {

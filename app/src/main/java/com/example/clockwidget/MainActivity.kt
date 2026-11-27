@@ -53,6 +53,49 @@ class MainActivity : Activity() {
             setPadding(0, dp(12f).toInt(), 0, 0)
         }.also { root.addView(it) }
 
+        // アプリの更新（共通ルール：設定のいちばん上）
+        label("アプリの更新")
+        root.addView(TextView(this).apply {
+            text = "今の版：v${BuildConfig.VERSION_NAME}"
+            textSize = 13f
+            setTextColor(Color.GRAY)
+        })
+        val status = TextView(this).apply { textSize = 14f; text = settings.updateStatus }
+        root.addView(status)
+        val updateButton = Button(this).apply { text = "今すぐ更新を確認" }
+        updateButton.setOnClickListener {
+            if (!packageManager.canRequestPackageInstalls()) {
+                // 「このアプリからのインストールを許可」の画面を開く
+                status.text = "この画面で許可してから、もう一度押してください"
+                startActivity(Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                return@setOnClickListener
+            }
+            updateButton.isEnabled = false
+            status.text = "確認しています…"
+            Thread {
+                val result = try {
+                    val r = Updater.fetchLatest()
+                    if (Updater.isNew(r)) {
+                        runOnUiThread { status.text = "新しい版を取ってきています…" }
+                        Updater.install(this, r)
+                        "新しい版を入れています"
+                    } else "最新です"
+                } catch (e: Exception) {
+                    "確認できませんでした：${e.message}"
+                }
+                settings.updateStatus = result
+                runOnUiThread { status.text = result; updateButton.isEnabled = true }
+            }.start()
+        }
+        root.addView(updateButton)
+        // 開いたときに新しい版があるか確かめて知らせる（入れるのはボタンを押したとき）
+        Thread {
+            val r = runCatching { Updater.fetchLatest() }.getOrNull()
+            if (r != null && Updater.isNew(r)) runOnUiThread {
+                if (!isFinishing) status.text = "新しい版 ${r.tag} があります。「今すぐ更新を確認」で入れられます"
+            }
+        }.start()
+
         // 文字の大きさ
         val auto = Switch(this).apply {
             text = "大きさに合わせて文字を最大にする（余白なし）"
@@ -156,41 +199,6 @@ class MainActivity : Activity() {
         }
         refreshSamples()
 
-        // アプリの更新
-        label("アプリの更新")
-        root.addView(TextView(this).apply {
-            text = "今の版：${BuildConfig.VERSION_NAME}（${BuildConfig.GIT_SHA}）"
-            textSize = 13f
-            setTextColor(Color.GRAY)
-        })
-        val status = TextView(this).apply { textSize = 14f; text = settings.updateStatus }
-        root.addView(status)
-        val updateButton = Button(this).apply { text = "今すぐ更新を確認" }
-        updateButton.setOnClickListener {
-            if (!packageManager.canRequestPackageInstalls()) {
-                // 「このアプリからのインストールを許可」の画面を開く
-                status.text = "この画面で許可してから、もう一度押してください"
-                startActivity(Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
-                return@setOnClickListener
-            }
-            updateButton.isEnabled = false
-            status.text = "確認しています…"
-            Thread {
-                val result = try {
-                    val r = Updater.fetchLatest()
-                    if (Updater.isNew(r)) {
-                        runOnUiThread { status.text = "新しい版を取ってきています…" }
-                        Updater.install(this, r)
-                        "新しい版を入れています"
-                    } else "最新です"
-                } catch (e: Exception) {
-                    "確認できませんでした：${e.message}"
-                }
-                settings.updateStatus = result
-                runOnUiThread { status.text = result; updateButton.isEnabled = true }
-            }.start()
-        }
-        root.addView(updateButton)
 
         root.addView(Button(this).apply {
             text = "完了"
