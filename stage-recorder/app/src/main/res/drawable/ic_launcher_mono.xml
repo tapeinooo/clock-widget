@@ -3,7 +3,9 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- テーマアイコン用：マイクだけ -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M49.5,45a4.5,4.5 0,0 1,9 0v9a4.5,4.5 0,0 1,-9 0z" />
-    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M46,53.5a8,8 0,0 0,16 0M54,61.5v5M49.5,66.5h9" />
+    <!-- 白抜きのマイク（背景はアイコンの形いっぱいの赤） -->
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="1.5" android:scaleY="1.5">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M49.5,45a4.5,4.5 0,0 1,9 0v9a4.5,4.5 0,0 1,-9 0z" />
+        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M46,53.5a8,8 0,0 0,16 0M54,61.5v5M49.5,66.5h9" />
+    </group>
 </vector>
