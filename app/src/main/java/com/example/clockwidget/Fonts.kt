@@ -19,19 +19,17 @@ class ResFont(private val res: Int) : FontRef() {
 /**
  * フォントの組み合わせ（時刻と日付）。
  * japanese が false のフォントは日本語の字がないので、日付を英語（11.16 MON）で出す。
- *
- * 端末のフォントは layout（同じフォントを書いた res/layout/widget_text_*.xml）を持ち、ホーム画面が自分で時刻を進める。
- * アプリに入れたフォントは、ホーム画面がウィジェットの文字に使えない（制限付きで見た目を読み込むため、指定が無視される）ので、
- * layout を持たず、時刻と日付を絵に描いて出す。
+ * layout は同じフォントを書いたウィジェットの見た目（res/layout/widget_text_*.xml）。フォントごとに1つ（RemoteViews ではフォントを後から変えられないため）。
  */
-class FontDef(val name: String, val time: FontRef, val date: FontRef, val japanese: Boolean, val layout: Int = 0) {
-    val system get() = layout != 0
+class FontDef(val name: String, val time: FontRef, val date: FontRef, val japanese: Boolean, val layout: Int) {
+    /** 日付を、ホーム画面が進める文字（TextClock）ではなく、こちらが書く文字（TextView）で出すか（日本語の字がないフォントは英語で書くため）。 */
+    val dateIsText get() = !japanese
 }
 
 object Fonts {
     private fun sys(name: String, family: String, layout: Int) = FontDef(name, SysFont(family), SysFont(family), true, layout)
-    private fun res(name: String, font: Int, japanese: Boolean = false) =
-        FontDef(name, ResFont(font), ResFont(font), japanese)
+    private fun res(name: String, layout: Int, font: Int, japanese: Boolean = false) =
+        FontDef(name, ResFont(font), ResFont(font), japanese, layout)
 
     /** 設定には位置を保存するので、足すときは末尾に。 */
     val all = listOf(
@@ -43,17 +41,17 @@ object Fonts {
         sys("等幅", "monospace", R.layout.widget_text_mono),
         sys("カジュアル", "casual", R.layout.widget_text_casual),
         sys("筆記体", "cursive", R.layout.widget_text_cursive),
-        res("SF（Orbitron）", R.font.orbitron),
-        res("SF（Audiowide）", R.font.audiowide),
-        FontDef("ゲームウォッチ（液晶）", ResFont(R.font.dseg7), ResFont(R.font.dseg14), false),
-        res("デジタル（Share Tech Mono）", R.font.sharetechmono),
-        res("レトロ端末（VT323）", R.font.vt323),
-        res("ドット（DotGothic16）", R.font.dotgothic16, japanese = true),
-        res("8ビット（Press Start 2P）", R.font.pressstart2p),
-        res("横長（Michroma）", R.font.michroma),
-        res("横長・太め（Krona One）", R.font.kronaone),
-        res("横長・極太（Syncopate）", R.font.syncopate),
-        res("超横長（Lexend Zetta）", R.font.lexendzetta),
-        res("横長・丸み（Zen Dots）", R.font.zendots),
+        res("SF（Orbitron）", R.layout.widget_text_orbitron, R.font.orbitron),
+        res("SF（Audiowide）", R.layout.widget_text_audiowide, R.font.audiowide),
+        FontDef("ゲームウォッチ（液晶）", ResFont(R.font.dseg7), ResFont(R.font.dseg14), false, R.layout.widget_text_dseg),
+        res("デジタル（Share Tech Mono）", R.layout.widget_text_sharetech, R.font.sharetechmono),
+        res("レトロ端末（VT323）", R.layout.widget_text_vt323, R.font.vt323),
+        res("ドット（DotGothic16）", R.layout.widget_text_dotgothic, R.font.dotgothic16, japanese = true),
+        res("8ビット（Press Start 2P）", R.layout.widget_text_pressstart, R.font.pressstart2p),
+        res("横長（Michroma）", R.layout.widget_text_michroma, R.font.michroma),
+        res("横長・太め（Krona One）", R.layout.widget_text_kronaone, R.font.kronaone),
+        res("横長・極太（Syncopate）", R.layout.widget_text_syncopate, R.font.syncopate),
+        res("超横長（Lexend Zetta）", R.layout.widget_text_lexendzetta, R.font.lexendzetta),
+        res("横長・丸み（Zen Dots）", R.layout.widget_text_zendots, R.font.zendots),
     )
 }

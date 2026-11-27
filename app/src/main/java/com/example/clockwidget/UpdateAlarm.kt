@@ -7,9 +7,7 @@ import android.content.Intent
 import android.os.Build
 
 /**
- * 描き直しの目覚まし。
- * - 毎時（端末のフォント）：時刻はホーム画面が進めるので、時の桁数や日付が変わるときに大きさを合わせ直すだけ。
- * - 毎分（アプリに入れたフォント）：常駐（TickService）が止められたときの予備。画面が消えている間は起こさない。
+ * 毎時の描き直しの目覚まし。時刻はホーム画面が進めるので、時の桁数や日付が変わるときに、大きさと日付の文字を合わせ直すだけ。
  */
 object UpdateAlarm {
     const val ACTION = "com.example.clockwidget.UPDATE"
@@ -21,18 +19,14 @@ object UpdateAlarm {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-    fun schedule(context: Context, everyMinute: Boolean) {
+    fun schedule(context: Context) {
         val alarm = context.getSystemService(AlarmManager::class.java) ?: return
-        val step = if (everyMinute) 60_000L else 3_600_000L
-        val now = System.currentTimeMillis()
-        // 30分ずれたタイムゾーンでも、正時は 1970年からの時間の区切りと合うとは限らないので、分は現地時刻から求める
-        val at = if (everyMinute) now - now % step + step else nextHour()
+        val at = nextHour()
         val pi = pendingIntent(context)
         val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarm.canScheduleExactAlarms()
         try {
             when {
                 !exact -> alarm.setWindow(AlarmManager.RTC, at, 5_000L, pi)
-                everyMinute -> alarm.setExact(AlarmManager.RTC, at, pi)
                 else -> alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
             }
         } catch (e: SecurityException) {

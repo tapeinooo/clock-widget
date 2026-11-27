@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.clockwidget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.9"
+        versionCode = 11
+        versionName = "1.10"
         // 更新の確認に使う、このアプリを作ったときのコミット（GitHub Actions が渡す）
         buildConfigField("String", "GIT_SHA", "\"${providers.gradleProperty("gitSha").orElse("dev").get()}\"")
     }

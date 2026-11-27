@@ -120,11 +120,6 @@ class MainActivity : Activity() {
 
         // フォント：見本をタップして選ぶ
         label("フォント（タップで選ぶ）")
-        root.addView(TextView(this).apply {
-            text = "★のフォントは、時刻を進めるためにアプリが常駐します。★のないフォントは、ホーム画面が時刻を進めます（いちばん確実）。"
-            textSize = 13f
-            setTextColor(Color.GRAY)
-        })
         Fonts.all.forEachIndexed { i, font ->
             val box = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -139,7 +134,7 @@ class MainActivity : Activity() {
                 }
             }
             box.addView(TextView(this).apply {
-                text = if (font.system) font.name else "★ ${font.name}"
+                text = font.name
                 textSize = 12f
                 setTextColor(Color.GRAY)
             })

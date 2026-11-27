@@ -6,8 +6,6 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import android.os.Build
@@ -25,13 +23,10 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Locale
-import kotlin.math.sqrt
 
 /**
- * 出し方は2つ。
- * - 文字（端末のフォント）：TextClock で出し、時刻も日付もホーム画面が自分で進める。アプリが止められても時刻は止まらない。
- * - 絵（アプリに入れたフォント）：時刻と日付を絵に描いて出す。毎分描き直すので、常駐（TickService）が要る。
- *   ホーム画面はアプリに入れたフォントを文字に使えないため。
+ * 時刻と日付は TextClock（と、毎時の目覚ましで書き換える日付の文字）で出す。時刻はホーム画面が自分で進めるので、
+ * アプリが端末に止められても止まらず、常駐も要らない。
  */
 object ClockWidget {
     private const val TIME_SP = 36f
@@ -46,8 +41,6 @@ object ClockWidget {
     private const val GAP = 0.08f
     /** 端で欠けないよう、ほんの少しだけ小さくする。 */
     private const val SAFETY = 0.96f
-    /** 絵が大きすぎると送れないので、点の数を抑える（足りない分は拡大して出す）。 */
-    private const val MAX_PIXELS = 500_000f
     /** 計るときの文字の大きさ。 */
     private const val BASE = 100f
     private const val DIGITS = "0123456789:"
@@ -59,10 +52,6 @@ object ClockWidget {
         if (font.japanese) DateTimeFormatter.ofPattern("M月d日(E)", Locale.JAPAN).format(date)
         else DateTimeFormatter.ofPattern("M.d EEE", Locale.US).format(date).uppercase(Locale.US)
 
-    /** 文字で出すか。大きさに合わせて字の位置をずらすのは Android 12 以降しかできないので、古い Android の自動調整は絵にする。 */
-    private fun textMode(s: Settings): Boolean =
-        Fonts.all[s.font].system && (!s.autoFit || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-
     fun build(context: Context, manager: AppWidgetManager, id: Int): RemoteViews {
         val s = Settings(context)
         val o = manager.getAppWidgetOptions(id)
@@ -70,8 +59,6 @@ object ClockWidget {
         val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
         val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
         val portrait = if (w > 0 && h > 0) SizeF(w.toFloat(), h.toFloat()) else null
-        // 絵は縦向きの大きさで描き、ほかの向きでは縦横比を保って拡大・縮小させる
-        if (!textMode(s)) return bitmapViews(context, s, portrait ?: SizeF(180f, 80f))
         if (!s.autoFit) return textViews(context, s, null)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // 縦向き・横向きなど、ホーム画面が使う大きさごとに作っておき、ホーム画面に選ばせる
@@ -107,6 +94,11 @@ object ClockWidget {
     private fun textViews(context: Context, s: Settings, size: SizeF?): RemoteViews {
         val font = Fonts.all[s.font]
         val v = RemoteViews(context.packageName, font.layout)
+        if (font.dateIsText) {
+            val text = dateText(font)
+            v.setTextViewText(R.id.date, text)
+            v.setTextViewText(R.id.fit_date, text)
+        }
         val fit = s.autoFit && size != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
         v.setViewVisibility(R.id.manual, if (fit) View.GONE else View.VISIBLE)
         v.setViewVisibility(R.id.fit, if (fit) View.VISIBLE else View.GONE)
@@ -124,9 +116,9 @@ object ClockWidget {
             p.typeface = font.date.typeface(context)
             p.textSize = BASE * ratio
             // ホーム画面と同じ作り方（端末の言語）で文字にする
-            val dates = if (!showDate) emptyList() else listOf(0, 1).map { add ->
-                val day = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, add) }
-                DateFormat.format(DATE_FORMAT, day).toString()
+            val dates = if (!showDate) emptyList() else listOf(0L, 1L).map { add ->
+                if (font.dateIsText) dateText(font, LocalDate.now().plusDays(add))
+                else DateFormat.format(DATE_FORMAT, Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, add.toInt()) }).toString()
             }
             val dw = dates.maxOfOrNull { p.measureText(it) } ?: 0f
             val db = Rect()
@@ -168,58 +160,6 @@ object ClockWidget {
         return (l.getLineBaseline(0) - l.getLineTop(0)).toFloat()
     }
 
-    /** 今の時刻と日付を絵（濃さだけの絵）に描き、文字色で塗る。size はウィジェットの大きさ（dp）。 */
-    private fun bitmapViews(context: Context, s: Settings, size: SizeF): RemoteViews {
-        val font = Fonts.all[s.font]
-        val metrics = context.resources.displayMetrics
-        var density = metrics.density
-        val area = size.width * size.height * density * density
-        if (area > MAX_PIXELS) density *= sqrt(MAX_PIXELS / area)
-        val bw = (size.width * density).toInt().coerceAtLeast(1)
-        val bh = (size.height * density).toInt().coerceAtLeast(1)
-        val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ALPHA_8)
-        val c = Canvas(bmp)
-        val pad = if (s.autoFit) 0f else 8f * density
-        val availW = bw - 2 * pad
-        val availH = bh - 2 * pad
-
-        val is24 = DateFormat.is24HourFormat(context)
-        val hour = hourNow(is24)
-        val time = "$hour:%02d".format(LocalTime.now().minute)
-        val date = dateText(font)
-        val showDate = s.dateSize != DATE_NONE
-        val di = s.dateSize.coerceAtMost(2)
-        val ratio = if (s.autoFit) DATE_RATIOS[di] else DATE_SP / TIME_SP * DATE_MANUAL[di]
-
-        // 大きさ BASE で計って、収まる倍率 k を求める
-        val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font.time.typeface(context); textSize = BASE }
-        val dp = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font.date.typeface(context); textSize = BASE * ratio }
-        val tw = timeWidth(tp, is24, hour)
-        val tb = Rect().also { tp.getTextBounds(DIGITS, 0, DIGITS.length, it) }
-        val dw = if (showDate) dp.measureText(date) else 0f
-        val db = Rect().also { if (showDate) dp.getTextBounds(date, 0, date.length, it) }
-        val gap = if (showDate) (tb.bottom - tb.top) * GAP else 0f
-        val height = (tb.bottom - tb.top) + gap + (db.bottom - db.top)
-        val fitK = minOf(availW / maxOf(tw, dw), availH / height)
-        val k = if (s.autoFit) fitK * SAFETY else {
-            // 指定の大きさ（sp）を絵の点に直す。入りきらなければ縮める
-            val want = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, TIME_SP * s.textScale / 100f, metrics) /
-                metrics.density * density / BASE
-            minOf(want, fitK)
-        }
-        tp.textSize = BASE * k
-        dp.textSize = BASE * ratio * k
-        val top = (bh - height * k) / 2
-        c.drawText(time, (bw - tp.measureText(time)) / 2, top - tb.top * k, tp)
-        if (showDate) c.drawText(date, (bw - dp.measureText(date)) / 2, top + (tb.bottom - tb.top + gap - db.top) * k, dp)
-
-        val v = RemoteViews(context.packageName, R.layout.widget)
-        v.setImageViewBitmap(R.id.clock, bmp)
-        v.setInt(R.id.clock, "setColorFilter", s.textColor)
-        common(context, s, v)
-        return v
-    }
-
     fun updateAll(context: Context) {
         val m = AppWidgetManager.getInstance(context)
         val ids = m.getAppWidgetIds(ComponentName(context, ClockWidgetReceiver::class.java))
@@ -227,11 +167,9 @@ object ClockWidget {
         schedule(context, ids.isNotEmpty())
     }
 
-    /** 目覚ましと常駐を、今の設定に合わせる。ウィジェットがなければ外す。 */
+    /** 毎時の目覚ましを掛ける。ウィジェットがなければ外す。 */
     fun schedule(context: Context, any: Boolean) {
-        val ticks = any && !textMode(Settings(context))
-        if (any) UpdateAlarm.schedule(context, everyMinute = ticks) else UpdateAlarm.cancel(context)
-        TickService.sync(context, ticks)
+        if (any) UpdateAlarm.schedule(context) else UpdateAlarm.cancel(context)
     }
 }
 

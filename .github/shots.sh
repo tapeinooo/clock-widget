@@ -10,7 +10,7 @@ shot() { # 名前 フォント 自動 幅 高さ
   sleep 4
   adb exec-out screencap -p > shots/$1.png
 }
-for f in 0 1 2 3 4 5 6 7 8 10 19; do shot font${f} $f 1 250 110; done
+for f in 0 8 9 10 11 12 13 14 15 16 17 18 19; do shot font${f} $f 1 250 110; done
 shot manual_sans 0 0 250 110
 shot manual_dseg 10 0 250 110
 shot wide_sans 0 1 300 60
@@ -24,3 +24,5 @@ shot tick_bitmap_a 10 1 250 110
 sleep 70
 adb exec-out screencap -p > shots/tick_bitmap_b.png
 adb shell dumpsys activity services com.example.clockwidget > shots/services.txt
+sleep 70
+adb exec-out screencap -p > shots/tick_b.png
